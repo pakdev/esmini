@@ -116,37 +116,33 @@ void ControllerFollowGhost::Step(double timeStep)
 	double diffH = asin(GetCrossProduct2D(egoDirGlobal[0], egoDirGlobal[1], diffGlobal[0], diffGlobal[1]));
 
 	// Update driver model target values
-	vehicle_.DrivingControlTarget(timeStep, diffH, point.speed);
+	vehicle_.DrivingControlTarget(timeStep, point.speed, diffH);
 
 	// Register updated vehicle position
-	object_->pos_.XYZH2TrackPos(vehicle_.posX_, vehicle_.posY_, vehicle_.posZ_, vehicle_.heading_);
-
-	object_->SetSpeed(vehicle_.speed_);
 
 	// Fetch Z and Pitch from road position
 	vehicle_.posZ_ = object_->pos_.GetZ();
 	vehicle_.pitch_ = object_->pos_.GetP();
 
+	// Register updated vehicle position
+	gateway_->updateObjectWorldPosXYH(object_->id_, 0.0, vehicle_.posX_, vehicle_.posY_, vehicle_.heading_);
+	gateway_->updateObjectSpeed(object_->id_, 0.0, vehicle_.speed_);
+
 	// Update wheels wrt domains
-	if (domain_ & Controller::Domain::CTRL_LONGITUDINAL)
+	if (IsActiveOnDomains(ControlDomains::DOMAIN_LONG))
 	{
-		object_->wheel_rot_ = vehicle_.wheelRotation_;
-		object_->SetDirtyBits(Object::DirtyBit::WHEEL_ROTATION);
+		gateway_->updateObjectWheelRotation(object_->id_, 0.0, vehicle_.wheelRotation_);
 	}
 
-	if (domain_ & Controller::Domain::CTRL_LATERAL)
+	if (IsActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
-		object_->wheel_angle_ = vehicle_.wheelAngle_;
-		object_->SetDirtyBits(Object::DirtyBit::WHEEL_ANGLE);
+		gateway_->updateObjectWheelAngle(object_->id_, 0.0, vehicle_.wheelAngle_);
 	}
-
-	gateway_->reportObject(object_->id_, object_->name_, static_cast<int>(object_->type_), object_->category_, object_->model_id_,
-		object_->GetActivatedControllerType(), object_->boundingbox_, 0, object_->speed_, object_->wheel_angle_, object_->wheel_rot_, &object_->pos_);
 
 	Controller::Step(timeStep);
 }
 
-void ControllerFollowGhost::Activate(int domainMask)
+void ControllerFollowGhost::Activate(ControlDomains domainMask)
 {
 	if (object_)
 	{
@@ -159,6 +155,9 @@ void ControllerFollowGhost::Activate(int domainMask)
 		object_->sensor_pos_[0] = object_->pos_.GetX();
 		object_->sensor_pos_[1] = object_->pos_.GetY();
 		object_->sensor_pos_[2] = object_->pos_.GetZ();
+
+		object_->pos_.SetAlignModeZ(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
+		object_->pos_.SetAlignModeP(roadmanager::Position::ALIGN_MODE::ALIGN_HARD);
 	}
 
 	Controller::Activate(domainMask);

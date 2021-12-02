@@ -36,6 +36,8 @@ static const double maxStepSize = 0.1;
 static const double minStepSize = 0.001;
 static bool pause = false;  // continuous play
 static double time_scale = 1.0;
+static bool no_ghost = false;
+static std::vector<int> removeObjects;
 
 double deltaSimTime;  // external - used by Viewer::RubberBandCamera
 
@@ -43,12 +45,14 @@ double deltaSimTime;  // external - used by Viewer::RubberBandCamera
 typedef struct
 {
 	int id;
+	std::string name;
 	viewer::EntityModel* entityModel;
 	struct ObjectPositionStruct pos;
 	osg::ref_ptr<osg::Vec3Array> trajPoints;
-	viewer::Trajectory* trajectory;
+	viewer::PolyLine* trajectory;
 	float wheel_angle;
 	float wheel_rotation;
+	bool visible;
 } ScenarioEntity;
 
 static std::vector<ScenarioEntity> scenarioEntity;
@@ -67,11 +71,28 @@ static const char* entityModelsFiles_[] =
 	"walkman.osgb",
 	"moose_cc0.osgb",
 	"cyclist.osgb",
+	"mc.osgb"
 };
 
 void log_callback(const char* str)
 {
 	printf("%s\n", str);
+}
+
+void setEntityVisibility(int index, bool visible)
+{
+	if (index >= 0 && index < scenarioEntity.size())
+	{
+		if (visible != scenarioEntity[index].visible)
+		{
+			scenarioEntity[index].entityModel->txNode_->setNodeMask(visible ? viewer::NodeMask::NODE_MASK_ENTITY_MODEL : 0x0);
+			scenarioEntity[index].visible = visible;
+			if (scenarioEntity[index].trajectory)
+			{
+				scenarioEntity[index].trajectory->SetNodeMaskLines(visible ? viewer::NodeMask::NODE_MASK_TRAJECTORY_LINES : 0x0);
+			}
+		}
+	}
 }
 
 ScenarioEntity *getScenarioEntityById(int id)
@@ -96,17 +117,31 @@ int ParseEntities(viewer::Viewer* viewer, Replay* player)
 	for (int i = 0; i < player->data_.size(); i++)
 	{
 		ObjectStateStructDat* state = &player->data_[i];
-		ScenarioEntity* sc = getScenarioEntityById(state->info.id);
 
+		if (no_ghost && state->info.ctrl_type == 100)  // control type 100 indicates ghost
+		{
+			continue;
+		}
+
+		if (std::find(removeObjects.begin(), removeObjects.end(), state->info.id) != removeObjects.end())
+		{
+			continue;
+		}
+
+		ScenarioEntity* sc = getScenarioEntityById(state->info.id);
 		// If not available, create it
 		if (sc == 0)
 		{
 			ScenarioEntity new_sc;
 
-			LOG("Creating object %d - got state from gateway", state->info.id);
-
 			new_sc.id = state->info.id;
 			new_sc.trajPoints = 0;
+			new_sc.pos = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0.0f, 0.0f };
+			new_sc.trajectory = nullptr;
+			new_sc.wheel_angle = 0.0f;
+			new_sc.wheel_rotation = 0.0f;
+			new_sc.name = state->info.name;
+			new_sc.visible = true;
 
 			const char* filename = "";
 			if (state->info.model_id >= 0 && state->info.model_id < sizeof(entityModelsFiles_) / sizeof(char*))
@@ -114,10 +149,18 @@ int ParseEntities(viewer::Viewer* viewer, Replay* player)
 				filename = entityModelsFiles_[state->info.model_id];
 			}
 
-			if ((new_sc.entityModel = viewer->AddEntityModel(filename, osg::Vec4(0.5, 0.5, 0.5, 1.0),
-				viewer::EntityModel::EntityType::ENTITY_TYPE_VEHICLE, false, state->info.name, &state->info.boundingbox)) == 0)
+			if ((new_sc.entityModel = viewer->CreateEntityModel(filename, osg::Vec4(0.5, 0.5, 0.5, 1.0),
+				viewer::EntityModel::EntityType::VEHICLE, false, state->info.name, &state->info.boundingbox,
+				static_cast<EntityScaleMode>(state->info.scaleMode))) == 0)
 			{
 				return -1;
+			}
+			else
+			{
+				if (viewer->AddEntityModel(new_sc.entityModel) != 0)
+				{
+					return -1;
+				}
 			}
 
 			// Add it to the list of scenario cars
@@ -149,8 +192,6 @@ int ParseEntities(viewer::Viewer* viewer, Replay* player)
 				sc->trajPoints->push_back(osg::Vec3d(state->pos.x, state->pos.y, state->pos.z + z_offset));
 			}
 		}
-
-
 	}
 
 	for (int i = 0; i < scenarioEntity.size(); i++)
@@ -165,7 +206,7 @@ int ParseEntities(viewer::Viewer* viewer, Replay* player)
 			//color = osg::Vec4d(0.9, 0.3, 0.2, 1.0);
 			color = osg::Vec4d(0.9, 0.7, 0.3, 1.0);
 		}
-		viewer->AddPolyLine(viewer->trajectoryLines_, scenarioEntity[i].trajPoints, color, width);
+		scenarioEntity[i].trajectory = viewer->AddPolyLine(viewer->trajectoryLines_, scenarioEntity[i].trajPoints, color, width);
 	}
 
 	return 0;
@@ -244,9 +285,7 @@ int main(int argc, char** argv)
 	Replay *player;
 	double simTime = 0;
 	double view_mode = viewer::NodeMask::NODE_MASK_ENTITY_MODEL;
-	bool no_ghost = false;
 	static char info_str_buf[256];
-	std::vector<int> removeObjects;
 
 	// Use logger callback for console output instead of logfile
 	Logger::Inst().SetCallback(log_callback);
@@ -255,17 +294,17 @@ int main(int argc, char** argv)
 	// use common options parser to manage the program arguments
 	SE_Options opt;
 	opt.AddOption("file", "Simulation recording data file", "filename");
-	opt.AddOption("res_path", "Path to resources root folder - relative or absolut", "path");
 	opt.AddOption("camera_mode", "Initial camera mode (\"orbit\" (default), \"fixed\", \"flex\", \"flex-orbit\", \"top\", \"driver\") (toggle during simulation by press 'k') ", "mode");
-	opt.AddOption("time_scale", "Playback speed scale factor (1.0 == normal)", "factor");
-	opt.AddOption("start_time", "Start playing at timestamp", "ms");
-	opt.AddOption("stop_time", "Stop playing at timestamp (set equal to time_start for single frame)", "ms");
-	opt.AddOption("repeat", "loop scenario");
-	opt.AddOption("road_features", "Show OpenDRIVE road features");
-	opt.AddOption("view_mode", "Entity visualization: \"model\"(default)/\"boundingbox\"/\"both\"", "view_mode");
+	opt.AddOption("hide_trajectories", "Hide trajectories from start (toggle with key 'n')");
 	opt.AddOption("no_ghost", "Remove ghost entities");
 	opt.AddOption("remove_object", "Remove object(s). Multiple ids separated by comma, e.g. 2,3,4.", "id");
-	opt.AddOption("hide_trajectories", "Hide trajectories from start (toggle with key 'n')");
+	opt.AddOption("repeat", "loop scenario");
+	opt.AddOption("res_path", "Path to resources root folder - relative or absolut", "path");
+	opt.AddOption("road_features", "Show OpenDRIVE road features");
+	opt.AddOption("start_time", "Start playing at timestamp", "ms");
+	opt.AddOption("stop_time", "Stop playing at timestamp (set equal to time_start for single frame)", "ms");
+	opt.AddOption("time_scale", "Playback speed scale factor (1.0 == normal)", "factor");
+	opt.AddOption("view_mode", "Entity visualization: \"model\"(default)/\"boundingbox\"/\"both\"", "view_mode");
 
 	if (argc < 2)
 	{
@@ -411,8 +450,6 @@ int main(int argc, char** argv)
 		}
 		viewer->SetWindowTitle("esmini - " + FileNameWithoutExtOf(argv[0]) + " " + (FileNameOf(opt.GetOptionArg("file"))));
 
-		ParseEntities(viewer, player);
-
 		__int64 now, lastTimeStamp = 0;
 
 		if (opt.GetOptionSet("time_scale"))
@@ -484,6 +521,7 @@ int main(int argc, char** argv)
 			} while (pos != std::string::npos);
 		}
 
+		ParseEntities(viewer, player);
 
 		if (opt.GetOptionSet("hide_trajectories"))
 		{
@@ -552,19 +590,26 @@ int main(int argc, char** argv)
 			// Fetch states of scenario objects
 			ObjectStateStructDat* state = 0;
 
-			for (int index = 0; (state = player->GetState(index)) != 0; index++)
+			for (int index = 0; index < scenarioEntity.size(); index++)
 			{
-				if (no_ghost && state->info.ctrl_type == 100)  // control type 100 indicates ghost
+				ScenarioEntity* sc = &scenarioEntity[index];
+
+				state = player->GetState(sc->id);
+				if (state == nullptr)  // no state for given object (index) at this timeframe
 				{
+					setEntityVisibility(index, false);
+
+					if (index == viewer->currentCarInFocus_)
+					{
+						// Update overlay info text
+						snprintf(info_str_buf, sizeof(info_str_buf), "%.2fs entity[%d]: %s (%d) NO INFO",
+							simTime, viewer->currentCarInFocus_, sc->name.c_str(), sc->id);
+						viewer->SetInfoText(info_str_buf);
+					}
 					continue;
 				}
 
-				if (std::find(removeObjects.begin(), removeObjects.end(), state->info.id) != removeObjects.end())
-				{
-					continue;
-				}
-
-				ScenarioEntity *sc = getScenarioEntityById(state->info.id);
+				setEntityVisibility(index, true);
 
 				// If not available, create it
 				if (sc == 0)
@@ -579,8 +624,8 @@ int main(int argc, char** argv)
 				if (index == viewer->currentCarInFocus_)
 				{
 					// Update overlay info text
-					snprintf(info_str_buf, sizeof(info_str_buf), "%.2fs entity[%d]: %s %.2fkm/h (%d, %d, %.2f, %.2f)/(%.2f, %.2f %.2f) timeScale: %.2f ",
-						simTime, state->info.id, state->info.name, 3.6 * state->info.speed, sc->pos.roadId, sc->pos.laneId,
+					snprintf(info_str_buf, sizeof(info_str_buf), "%.2fs entity[%d]: %s (%d) %.2fkm/h (%d, %d, %.2f, %.2f)/(%.2f, %.2f %.2f) timeScale: %.2f ",
+						simTime, viewer->currentCarInFocus_, state->info.name, state->info.id, 3.6 * state->info.speed, sc->pos.roadId, sc->pos.laneId,
 						fabs(sc->pos.offset) < SMALL_NUMBER ? 0 : sc->pos.offset, sc->pos.s, sc->pos.x, sc->pos.y, sc->pos.h, time_scale);
 					viewer->SetInfoText(info_str_buf);
 				}
@@ -593,7 +638,7 @@ int main(int argc, char** argv)
 				c->entityModel->SetPosition(c->pos.x, c->pos.y, c->pos.z);
 				c->entityModel->SetRotation(c->pos.h, c->pos.p, c->pos.r);
 
-				if (c->entityModel->GetType() == viewer::EntityModel::EntityType::ENTITY_TYPE_VEHICLE)
+				if (c->entityModel->GetType() == viewer::EntityModel::EntityType::VEHICLE)
 				{
 					((viewer::CarModel*)c->entityModel)->UpdateWheels(c->wheel_angle, c->wheel_rotation);
 				}

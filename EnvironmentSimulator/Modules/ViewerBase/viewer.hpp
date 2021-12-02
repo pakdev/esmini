@@ -15,6 +15,7 @@
 
 #include <osg/PositionAttitudeTransform>
 #include <osgViewer/Viewer>
+#include <osgViewer/ViewerEventHandlers>
 #include <osgGA/NodeTrackerManipulator>
 #include <osg/MatrixTransform>
 #include <osg/Material>
@@ -29,6 +30,7 @@
 #include "RoadManager.hpp"
 #include "CommonMini.hpp"
 #include "roadgeom.hpp"
+#include "OSIReporter.hpp"
 
 extern double color_green[3];
 extern double color_gray[3];
@@ -132,6 +134,55 @@ namespace viewer
 		void Update();
 	};
 
+	class OSIDetectedPoint
+	{
+	public:
+		osg::ref_ptr<osg::Group> parent_;
+		osg::ref_ptr<osg::Geometry> osi_detection_geom_;
+		osg::ref_ptr<osg::Vec3Array> osi_detection_points_;
+		osg::ref_ptr<osg::Vec4Array> osi_detection_color_;
+		bool showing_;
+
+		OSIDetectedPoint(const osg::Vec3 point, osg::ref_ptr<osg::Group> parent);
+		~OSIDetectedPoint();
+		void Show() { osi_detection_geom_->setNodeMask(NodeMask::NODE_MASK_OBJECT_SENSORS); showing_ = true; };
+		void Hide() { osi_detection_geom_->setNodeMask(0x0); showing_ = false; };
+		void Update(const osg::Vec3 point);
+	};
+
+	class OSIDetectedCar
+	{
+	public:
+		osg::ref_ptr<osg::Group> parent_;
+		osg::ref_ptr<osg::Group> car_;
+		osg::ref_ptr<osg::Geode> osi_detection_geode_box_;
+		osg::ref_ptr<osg::Geode> osi_detection_geode_center_;
+		osg::ref_ptr<osg::PositionAttitudeTransform> osi_detection_tx_;
+		osg::Vec3 bb_dimensions_;
+		bool showing_;
+
+		OSIDetectedCar(const osg::Vec3 point, double h, double w, double l, osg::ref_ptr<osg::Group> parent);
+		~OSIDetectedCar();
+		void Show();
+		void Hide();
+		void Update(const osg::Vec3 point);
+	};
+
+	class OSISensorDetection
+	{
+	public:
+		osg::ref_ptr<osg::Group> parent_;
+		osg::ref_ptr<osg::Group> detected_points_group_;
+		osg::ref_ptr<osg::Group> detected_bb_group_;
+
+		std::map<uint64_t, OSIDetectedPoint*> detected_points_;
+		std::map<uint64_t, OSIDetectedCar*> detected_cars_;
+
+		OSISensorDetection(osg::ref_ptr<osg::Group> parent);
+		~OSISensorDetection();
+		void Update(osi3::SensorView *sv);
+	};
+
 	class Trajectory
 	{
 	public:
@@ -180,25 +231,23 @@ namespace viewer
 	{
 	public:
 
-		typedef enum {
-			ENTITY_TYPE_VEHICLE,
-			ENTITY_TYPE_OTHER
-		} EntityType;
+		enum class EntityType
+		{
+			VEHICLE,
+			OTHER
+		};
 
 		osg::ref_ptr<osg::Group> group_;
+		osg::ref_ptr<osg::Group> model_;
 		osg::ref_ptr<osg::LOD> lod_;
 		osg::ref_ptr<osg::PositionAttitudeTransform> txNode_;
-		osg::ref_ptr<osg::Group> bb_;
 		osg::Quat quat_;
 		osg::ref_ptr<osg::Group> parent_;
+		osg::BoundingBox modelBB_;
 
-		double size_x;
-		double size_y;
-		double center_x;
-		double center_y;
 		Trajectory* trajectory_;
-		static const int entity_type_ = ENTITY_TYPE_OTHER;
-		virtual int GetType() { return entity_type_; }
+		static const EntityType entity_type_ = EntityType::OTHER;
+		virtual EntityType GetType() { return entity_type_; }
 
 		std::string name_;
 		std::string filename_;
@@ -229,8 +278,8 @@ namespace viewer
 		PointSensor* lane_sensor_;
 		PointSensor* trail_sensor_;
 		PointSensor* steering_sensor_;
-		static const int entity_type_ = ENTITY_TYPE_VEHICLE;
-		virtual int GetType() { return entity_type_; }
+		static const EntityType entity_type_ = EntityType::VEHICLE;
+		virtual EntityType GetType() { return entity_type_; }
 
 		CarModel(osgViewer::Viewer* viewer, osg::ref_ptr<osg::Group> group, osg::ref_ptr<osg::Group> parent, osg::ref_ptr<osg::Group>
 			trail_parent, osg::ref_ptr<osg::Group>traj_parent, osg::ref_ptr<osg::Node> dot_node, osg::Vec4 trail_color, std::string name);
@@ -320,21 +369,31 @@ namespace viewer
 		osg::ref_ptr<osg::Camera> infoTextCamera;
 		osg::ref_ptr<osgText::Text> infoText;
 
-		std::vector<PolyLine> polyLine_;
+		std::vector<PolyLine*> polyLine_;
 
 		Viewer(roadmanager::OpenDrive *odrManager, const char* modelFilename, const char* scenarioFilename, const char* exe_path, osg::ArgumentParser arguments, SE_Options* opt = 0);
 		~Viewer();
 		static void PrintUsage();
+		void AddCustomCamera(double x, double y, double z, double h, double p);
+
+		/**
+		* Set mode of the esmini camera model
+		* @param mode According to the RubberbandManipulator::CAMERA_MODE enum, plus any number of custom cameras. Set -1 to select the last.
+		*/
 		void SetCameraMode(int mode);
+		int GetNumberOfCameraModes();
 		void UpdateCameraFOV();
 		void SetVehicleInFocus(int idx);
 		int GetEntityInFocus() { return currentCarInFocus_; }
-		EntityModel* AddEntityModel(std::string modelFilepath, osg::Vec4 trail_color, EntityModel::EntityType type,
-			bool road_sensor, std::string name, OSCBoundingBox *boundingBox);
+		EntityModel* CreateEntityModel(std::string modelFilepath, osg::Vec4 trail_color, EntityModel::EntityType type,
+			bool road_sensor, std::string name, OSCBoundingBox *boundingBox, EntityScaleMode scaleMode = EntityScaleMode::NONE);
+		int AddEntityModel(EntityModel* model);
+		void RemoveCar(int index);
 		void RemoveCar(std::string name);
+		void ReplaceCar(int index, EntityModel* model);
 		int LoadShadowfile(std::string vehicleModelFilename);
 		int AddEnvironment(const char* filename);
-		osg::ref_ptr<osg::Group> LoadEntityModel(const char *filename);
+		osg::ref_ptr<osg::Group> LoadEntityModel(const char *filename, osg::BoundingBox& bb);
 		void UpdateSensor(PointSensor *sensor);
 		void SensorSetPivotPos(PointSensor *sensor, double x, double y, double z);
 		void SensorSetTargetPos(PointSensor *sensor, double x, double y, double z);
@@ -364,6 +423,8 @@ namespace viewer
 		void RegisterKeyEventCallback(KeyEventCallbackFunc func, void* data);
 		PolyLine* AddPolyLine(osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize=0);
 		PolyLine* AddPolyLine(osg::Group* parent, osg::ref_ptr<osg::Vec3Array> points, osg::Vec4 color, double width, double dotsize=0);
+		void CaptureNextFrame();
+		void CaptureContinuously(bool state);
 
 	private:
 
@@ -377,6 +438,7 @@ namespace viewer
 		bool keyLeft_;
 		bool keyRight_;
 		bool quit_request_;
+		osg::ref_ptr<osgViewer::ScreenCaptureHandler> screenCaptureHandler_;
 	};
 
 	class ViewerEventHandler : public osgGA::GUIEventHandler

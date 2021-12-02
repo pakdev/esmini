@@ -1808,6 +1808,56 @@ TEST(Route, TestAssignRoute)
     EXPECT_EQ(pos0.SetRoute(&route), -1);  // pos not along the route
 }
 
+TEST(GeoReferenceTest, TestNoGeoReferenceSimpleRoad)
+{
+    Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/straight_500m_signs.xodr");
+    OpenDrive* odr = Position::GetOpenDrive();
+    ASSERT_NE(odr, nullptr);
+    EXPECT_EQ(odr->GetNumOfRoads(), 1);
+
+    GeoReference* geo_ref = odr->GetGeoReference();
+    EXPECT_EQ(std::isnan(geo_ref->lat_0_), true);
+    EXPECT_EQ(std::isnan(geo_ref->lon_0_), true);
+    EXPECT_EQ(geo_ref->proj_, "");
+    EXPECT_EQ(std::isnan(geo_ref->k_0_), true);
+    EXPECT_EQ(std::isnan(geo_ref->x_0_), true);
+    EXPECT_EQ(std::isnan(geo_ref->y_0_), true);
+    EXPECT_EQ(geo_ref->datum_, "");
+    EXPECT_EQ(geo_ref->geo_id_grids_, "");
+    EXPECT_EQ(geo_ref->vunits_, "");
+    EXPECT_EQ(geo_ref->units_, "");
+    EXPECT_EQ(geo_ref->ellps_, "");
+    EXPECT_EQ(std::isnan(geo_ref->zone_), true);
+
+    std::string geo_ref_str = odr->GetGeoReferenceAsString();
+    EXPECT_EQ(geo_ref_str, "");
+}
+
+TEST(GeoReferenceTest, TestGeoReferenceSimpleRoad)
+{
+    Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/curve_r100.xodr");
+    OpenDrive* odr = Position::GetOpenDrive();
+    ASSERT_NE(odr, nullptr);
+    EXPECT_EQ(odr->GetNumOfRoads(), 1);
+
+    GeoReference* geo_ref = odr->GetGeoReference();
+    EXPECT_EQ(geo_ref->lat_0_, 37.35429341239328);
+    EXPECT_EQ(geo_ref->lon_0_, -122.0859797650754);
+    EXPECT_EQ(geo_ref->proj_, "utm");
+    EXPECT_EQ(geo_ref->k_0_, 1);
+    EXPECT_EQ(geo_ref->x_0_, 0);
+    EXPECT_EQ(geo_ref->y_0_, 0);
+    EXPECT_EQ(geo_ref->datum_, "WGS84");
+    EXPECT_EQ(geo_ref->geo_id_grids_, "egm96_15.gtx");
+    EXPECT_EQ(geo_ref->vunits_, "m");
+    EXPECT_EQ(geo_ref->units_, "m");
+    EXPECT_EQ(geo_ref->ellps_, "GRS80");
+    EXPECT_EQ(geo_ref->zone_, 32);
+
+    std::string geo_ref_str = odr->GetGeoReferenceAsString();
+    EXPECT_EQ(geo_ref_str, "+proj=utm +lat_0=37.3542934123933 +lon_0=-122.0859797650754");
+}
+
 TEST(ProbeTest, TestProbeSimpleRoad)
 {
     Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/curve_r100.xodr");
@@ -1883,7 +1933,7 @@ TEST(ProbeTest, TestProbeComplexRoad)
     Position pos_pivot = Position(3, 1, 5.0, 0.0);
     pos_pivot.SetHeadingRelative(M_PI);
 
-    EXPECT_EQ(pos_pivot.GetProbeInfo(20.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER), -2);
+    EXPECT_EQ(pos_pivot.GetProbeInfo(20.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER), Position::ErrorCode::ERROR_END_OF_ROAD);
     EXPECT_EQ(probe_data.road_lane_info.roadId, 3);
     EXPECT_EQ(probe_data.road_lane_info.laneId, 1);
     EXPECT_NEAR(probe_data.road_lane_info.heading, GetAngleSum(pos_pivot.GetH(), M_PI), 1E-5);
@@ -1892,7 +1942,7 @@ TEST(ProbeTest, TestProbeComplexRoad)
     // Position on right side, looking through the intersection
     pos_pivot.SetLanePos(3, -1, 5.0, 0.0);
     pos_pivot.SetHeadingRelative(0.0);
-    EXPECT_EQ(pos_pivot.GetProbeInfo(130.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER), 0);
+    EXPECT_EQ(pos_pivot.GetProbeInfo(130.0, &probe_data, roadmanager::Position::LookAheadMode::LOOKAHEADMODE_AT_LANE_CENTER), Position::ErrorCode::ERROR_NO_ERROR);
     EXPECT_EQ(probe_data.road_lane_info.roadId, 1);
     EXPECT_EQ(probe_data.road_lane_info.laneId, -1);
     EXPECT_NEAR(probe_data.road_lane_info.heading, 0.192980, 1E-5);

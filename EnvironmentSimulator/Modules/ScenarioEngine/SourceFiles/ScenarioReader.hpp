@@ -75,8 +75,7 @@ namespace scenarioengine
 	{
 	public:
 
-		ScenarioReader(Entities *entities, Catalogs *catalogs, bool disable_controllers = false) :
-			objectCnt_(0), entities_(entities), catalogs_(catalogs), disable_controllers_(disable_controllers) {}
+		ScenarioReader(Entities* entities, Catalogs* catalogs, bool disable_controllers = false);
 		~ScenarioReader();
 		int loadOSCFile(const char * path);
 		int loadOSCMem(const pugi::xml_document &xml_doch);
@@ -93,6 +92,7 @@ namespace scenarioengine
 		// Catalogs
 		void parseCatalogs();
 		Catalog* LoadCatalog(std::string name);
+		Catalogs* GetCatalogs() { return catalogs_; }
 		roadmanager::Route* parseOSCRoute(pugi::xml_node routeNode);
 		roadmanager::RMTrajectory* parseTrajectoryRef(pugi::xml_node trajNode);
 		void ParseOSCProperties(OSCProperties &properties, pugi::xml_node &xml_node);
@@ -140,8 +140,12 @@ namespace scenarioengine
 		int GetVersionMajor() { return versionMajor_; }
 		int GetVersionMinor() { return versionMinor_; }
 
+		int RemoveController(Controller* controller);
+		void AddController(Controller* controller) { controller_.push_back(controller); }
+
 		std::vector<Controller*> controller_;
-		Parameters parameters;
+
+		static Parameters parameters;  // static to enable set via callback during creation of object
 
 	private:
 		pugi::xml_document doc_;

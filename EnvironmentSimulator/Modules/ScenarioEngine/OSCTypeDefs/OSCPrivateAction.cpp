@@ -14,6 +14,7 @@
 #include <math.h>
 
 #include "OSCPrivateAction.hpp"
+#include "ScenarioEngine.hpp"
 
 #define MAX(x, y) (y > x ? y : x)
 #define MIN(x, y) (y < x ? y : x)
@@ -64,7 +65,7 @@ void AssignRouteAction::Start(double simTime, double dt)
 	OSCAction::Start(simTime, dt);
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		return;
@@ -93,7 +94,7 @@ void FollowTrajectoryAction::Start(double simTime, double dt)
 	OSCAction::Start(simTime, dt);
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		// other action or controller already updated lateral dimension of object
@@ -121,7 +122,7 @@ void FollowTrajectoryAction::End()
 	OSCAction::End();
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		return;
 	}
@@ -136,7 +137,7 @@ void FollowTrajectoryAction::End()
 void FollowTrajectoryAction::Step(double simTime, double dt)
 {
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		// other action or controller already updated lateral dimension of object
@@ -144,7 +145,47 @@ void FollowTrajectoryAction::Step(double simTime, double dt)
 		return;
 	}
 
+	double old_s = object_->pos_.GetTrajectoryS();
+
 	time_ += timing_scale_ * dt;
+
+	// Adjust time for any ghost headstart
+	double timeOffset = object_->IsGhost() ? object_->GetHeadstartTime() : 0.0;
+
+	// Move along trajectory
+	if (
+		// Ignore any timing info in trajectory
+		timing_domain_ == TimingDomain::NONE ||
+		// Speed is controlled elsewhere - just follow trajectory with current speed
+		(object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
+			object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG)))
+	{
+		object_->pos_.MoveTrajectoryDS(object_->speed_ * dt);
+		object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
+	}
+	else if (timing_domain_ == TimingDomain::TIMING_RELATIVE)
+	{
+		object_->pos_.SetTrajectoryPosByTime(time_ + timeOffset + timing_offset_);
+		if (time_ + timeOffset <= traj_->GetStartTime() + traj_->GetDuration())
+		{
+			// don't calculate and update actual speed when reached end of trajectory,
+			// since the movement is based on remaining length of trajectory, not speed
+			object_->SetSpeed((object_->pos_.GetTrajectoryS() - old_s) / MAX(SMALL_NUMBER, dt));
+		}
+		object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
+	}
+	else if (timing_domain_ == TimingDomain::TIMING_ABSOLUTE)
+	{
+		double s_old = object_->pos_.GetTrajectoryS();
+		object_->pos_.SetTrajectoryPosByTime(simTime * timing_scale_ + timeOffset + timing_offset_);
+		if (time_ + timeOffset <= traj_->GetStartTime() + traj_->GetDuration())
+		{
+			// don't calculate and update actual speed when reached end of trajectory,
+			// since the movement is based on remaining length of trajectory, not speed
+			object_->SetSpeed((object_->pos_.GetTrajectoryS() - s_old) / MAX(SMALL_NUMBER, dt));
+		}
+		object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
+	}
 
 	// Check end conditions:
 	// Trajectories with no time stamps:
@@ -153,46 +194,27 @@ void FollowTrajectoryAction::Step(double simTime, double dt)
 	// Trajectories with time stamps:
 	//     always ends when time >= trajectory duration (last timestamp)
 	if (((timing_domain_ == TimingDomain::NONE && !traj_->closed_ && object_->pos_.GetTrajectoryS() > (traj_->GetLength() - SMALL_NUMBER)) ||
-		 (timing_domain_ != TimingDomain::NONE && time_ >= traj_->GetStartTime() + traj_->GetDuration())))
+		 (timing_domain_ != TimingDomain::NONE && time_ + timeOffset >= traj_->GetStartTime() + traj_->GetDuration())))
 	{
 		// Reached end of trajectory
 		// Calculate road coordinates from final inertia (X, Y) coordinates
 		object_->pos_.XYZH2TrackPos(object_->pos_.GetX(), object_->pos_.GetY(), 0, object_->pos_.GetH());
 
+		double remaningDistance = 0.0;
+		if (timing_domain_ == TimingDomain::NONE && !traj_->closed_ && object_->pos_.GetTrajectoryS() > (traj_->GetLength() - SMALL_NUMBER))
+		{
+			// Move the remaning distance along road at current lane offset
+			remaningDistance = object_->speed_ * dt - (object_->pos_.GetTrajectoryS() - old_s);
+		}
+		else if (timing_domain_ != TimingDomain::NONE && time_ + timeOffset >= traj_->GetStartTime() + traj_->GetDuration())
+		{
+			// Move the remaning distance along road at current lane offset
+			double remaningTime = time_ + timeOffset - (traj_->GetStartTime() + traj_->GetDuration());
+			remaningDistance = remaningTime * object_->speed_;
+		}
+		object_->pos_.MoveAlongS(remaningDistance);
+
 		End();
-	}
-	else
-	{
-		// Move along trajectory
-		if (
-			// Ignore any timing info in trajectory
-			timing_domain_ == TimingDomain::NONE ||
-			// Speed is controlled elsewhere - just follow trajectory with current speed
-			(object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-			 object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LONGITUDINAL)))
-		{
-			object_->pos_.MoveTrajectoryDS(object_->speed_ * dt);
-			object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
-		}
-		else if (timing_domain_ == TimingDomain::TIMING_RELATIVE)
-		{
-			double s_old = object_->pos_.GetTrajectoryS();
-			object_->pos_.SetTrajectoryPosByTime(time_ + timing_offset_);
-			if (time_ <= traj_->GetStartTime() + traj_->GetDuration())
-			{
-				// don't calculate and update actual speed when reached end of trajectory,
-				// since the movement is based on remaining length of trajectory, not speed
-				object_->SetSpeed((object_->pos_.GetTrajectoryS() - s_old) / MAX(SMALL_NUMBER, dt));
-			}
-			object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
-		}
-		else if (timing_domain_ == TimingDomain::TIMING_ABSOLUTE)
-		{
-			double s_old = object_->pos_.GetTrajectoryS();
-			object_->pos_.SetTrajectoryPosByTime(simTime * timing_scale_ + timing_offset_);
-			object_->SetSpeed((object_->pos_.GetTrajectoryS() - s_old) / MAX(SMALL_NUMBER, dt));
-			object_->SetDirtyBits(Object::DirtyBit::LATERAL | Object::DirtyBit::LONGITUDINAL);
-		}
 	}
 }
 
@@ -232,7 +254,7 @@ void AcquirePositionAction::Start(double simTime, double dt)
 	OSCAction::Start(simTime, dt);
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		return;
@@ -269,27 +291,41 @@ void AssignControllerAction::Start(double simTime, double dt)
 		controller_->Assign(object_);
 	}
 
+	if (!object_->controller_->Active())
+	{
+		if (domainMask_ != ControlDomains::DOMAIN_NONE)
+		{
+			object_->controller_->Activate(domainMask_);
+			LOG("Controller %s activated, domain mask=0x%X", object_->controller_->GetName().c_str(), domainMask_);
+		}
+	}
+	else
+	{
+		LOG("Controller %s already active (domainmask 0x%X), should not happen when just assigned!",
+			object_->controller_->GetName().c_str(), domainMask_);
+	}
+
 	OSCAction::Start(simTime, dt);
 }
-
 
 void LatLaneChangeAction::Start(double simTime, double dt)
 {
 	OSCAction::Start(simTime, dt);
 	sim_time_ = simTime;
+	elapsed_ = 0.0;
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		return;
 	}
 
-	if (target_->type_ == Target::Type::ABSOLUTE)
+	if (target_->type_ == Target::Type::ABSOLUTE_LANE)
 	{
 		target_lane_id_ = target_->value_;
 	}
-	else if (target_->type_ == Target::Type::RELATIVE)
+	else if (target_->type_ == Target::Type::RELATIVE_LANE)
 	{
 		// Find out target lane relative referred vehicle
 		target_lane_id_ = ((TargetRelative*)target_)->object_->pos_.GetLaneId() + target_->value_;
@@ -344,8 +380,6 @@ void LatLaneChangeAction::Start(double simTime, double dt)
 	}
 
 	t_ = start_t_ = object_->pos_.GetT();
-
-	elapsed_ = 0;
 }
 
 void LatLaneChangeAction::Step(double simTime, double)
@@ -363,7 +397,7 @@ void LatLaneChangeAction::Step(double simTime, double)
 	}
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		return;
@@ -393,6 +427,8 @@ void LatLaneChangeAction::Step(double simTime, double)
 	{
 		LOG("Unexpected timing type: %d", transition_dynamics_.dimension_);
 	}
+
+	//LOG("Elapsed time %f", elapsed_);
 
 	factor = elapsed_ / transition_dynamics_.target_value_;
 	t_ = transition_dynamics_.Evaluate(factor, start_t_, target_t_);
@@ -434,7 +470,7 @@ void LatLaneChangeAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 		object_ = obj2;
 	}
 
-	if (target_->type_ == Target::Type::RELATIVE)
+	if (target_->type_ == Target::Type::RELATIVE_LANE)
 	{
 		if (((TargetRelative*)target_)->object_ == obj1)
 		{
@@ -447,9 +483,10 @@ void LatLaneOffsetAction::Start(double simTime, double dt)
 {
 	OSCAction::Start(simTime, dt);
 	sim_time_ = simTime;
+	elapsed_ = 0.0;
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		return;
@@ -457,11 +494,11 @@ void LatLaneOffsetAction::Start(double simTime, double dt)
 
 	start_lane_offset_ = object_->pos_.GetOffset();
 
-	if (target_->type_ == Target::Type::ABSOLUTE)
+	if (target_->type_ == Target::Type::ABSOLUTE_OFFSET)
 	{
 		target_lane_offset_ = target_->value_;
 	}
-	else if (target_->type_ == Target::Type::RELATIVE)
+	else if (target_->type_ == Target::Type::RELATIVE_OFFSET)
 	{
 		// Register what lane action object belongs to
 		int lane_id = object_->pos_.GetLaneId();
@@ -471,7 +508,8 @@ void LatLaneOffsetAction::Start(double simTime, double dt)
 		refpos.SetTrackPos(refpos.GetTrackId(), refpos.GetS(), refpos.GetT() + target_->value_);
 		refpos.ForceLaneId(lane_id);
 
-		target_lane_offset_ = refpos.GetT() + target_->value_;
+		// Target lane offset = t value of requested lane + offset relative t value of current lane without offset
+		target_lane_offset_ = refpos.GetT() - (object_->pos_.GetT() - object_->pos_.GetOffset());
 	}
 
 	double duration = 0;
@@ -504,10 +542,8 @@ void LatLaneOffsetAction::Start(double simTime, double dt)
 	}
 	else
 	{
-		throw std::runtime_error("Unexpected shape type: " + dynamics_.transition_.shape_);
+		throw std::runtime_error("Unexpected shape type: " + static_cast<int>(dynamics_.transition_.shape_));
 	}
-	LOG("Started LaneOffset with max lateral acc: %.2f -> duration: %.2f <=> distance: %.2f",
-		dynamics_.max_lateral_acc_, duration, dynamics_.transition_.target_value_);
 }
 
 void LatLaneOffsetAction::Step(double simTime, double)
@@ -516,7 +552,7 @@ void LatLaneOffsetAction::Step(double simTime, double)
 	double old_lane_offset = object_->pos_.GetOffset();
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LATERAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		// lateral motion controlled elsewhere
 		return;
@@ -537,7 +573,7 @@ void LatLaneOffsetAction::Step(double simTime, double)
 		factor = elapsed_ / dynamics_.transition_.target_value_;
 	}
 
-	lane_offset = dynamics_.transition_.Evaluate(factor, start_lane_offset_, target_->value_);
+	lane_offset = dynamics_.transition_.Evaluate(factor, start_lane_offset_, target_lane_offset_);
 
 	object_->pos_.SetLanePos(object_->pos_.GetTrackId(), object_->pos_.GetLaneId(), object_->pos_.GetS(), lane_offset);
 
@@ -564,7 +600,7 @@ void LatLaneOffsetAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 		object_ = obj2;
 	}
 
-	if (target_->type_ == Target::Type::RELATIVE)
+	if (target_->type_ == Target::Type::RELATIVE_OFFSET)
 	{
 		if (((TargetRelative*)target_)->object_ == obj1)
 		{
@@ -608,18 +644,20 @@ void LongSpeedAction::Start(double simTime, double dt)
 {
 	OSCAction::Start(simTime, dt);
 	sim_time_ = simTime;
+	elapsed_ = 0.0;
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LONGITUDINAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
 	{
 		// longitudinal motion controlled elsewhere
+		OSCAction::End();
 		return;
 	}
 
 	if (transition_dynamics_.shape_ == DynamicsShape::STEP)
 	{
 		object_->SetSpeed(target_->GetValue());
-		if (!(target_->type_ == Target::TargetType::RELATIVE && ((TargetRelative*)target_)->continuous_ == true))
+		if (!(target_->type_ == Target::TargetType::RELATIVE_SPEED && ((TargetRelative*)target_)->continuous_ == true))
 		{
 			OSCAction::End();
 		}
@@ -647,9 +685,10 @@ void LongSpeedAction::Step(double simTime, double)
 	sim_time_ = simTime;
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LONGITUDINAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
 	{
 		// longitudinal motion controlled elsewhere
+		OSCAction::End();
 		return;
 	}
 
@@ -690,7 +729,7 @@ void LongSpeedAction::Step(double simTime, double)
 
 	object_->SetSpeed(new_speed);
 
-	if (target_speed_reached && !(target_->type_ == Target::TargetType::RELATIVE && ((TargetRelative*)target_)->continuous_ == true))
+	if (target_speed_reached && !(target_->type_ == Target::TargetType::RELATIVE_SPEED && ((TargetRelative*)target_)->continuous_ == true))
 	{
 		OSCAction::End();
 	}
@@ -703,7 +742,7 @@ void LongSpeedAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 		object_ = obj2;
 	}
 
-	if (target_->type_ == Target::TargetType::RELATIVE)
+	if (target_->type_ == Target::TargetType::RELATIVE_SPEED)
 	{
 		if (((TargetRelative*)target_)->object_ == obj1)
 		{
@@ -758,7 +797,7 @@ void LongDistanceAction::Start(double simTime, double dt)
 void LongDistanceAction::Step(double simTime, double)
 {
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LONGITUDINAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
 	{
 		// longitudinal motion controlled elsewhere
 		return;
@@ -869,9 +908,27 @@ void LongDistanceAction::ReplaceObjectRefs(Object* obj1, Object* obj2)
 void TeleportAction::Start(double simTime, double dt)
 {
 	OSCAction::Start(simTime, dt);
+	LOG("Starting teleport Action");
+	//ScenarioEngine myEngine = new ScenarioEngine();
+	//LOG("Teleport time for %s :", object_->name_.c_str());
+	if (object_->IsGhost() && scenarioEngine_->getSimulationTime() > 0)
+	{
+		//printf("Time: %.2f \n", scenarioEngine_->getSimulationTime());
+		scenarioEngine_->SetSimulationTime(scenarioEngine_->getSimulationTime() - scenarioEngine_->GetHeadstartTime());
+		//printf("Trail: %d \n", object_->trail_.GetNumberOfVertices());
+		object_->trail_.Reset();
+
+		if (object_->ghost_Ego_ != 0)
+		{
+			object_->SetSpeed(object_->ghost_Ego_->GetSpeed());
+		}
+
+		//printf("Trail: %d \n", object_->trail_.GetNumberOfVertices());
+		scenarioEngine_->ResetEvents(); // Ghost-project. Reset events finished by ghost.
+	}
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LONGITUDINAL | Controller::Domain::CTRL_LONGITUDINAL))
+		object_->IsControllerActive())
 	{
 		// motion controlled elsewhere
 		return;
@@ -896,6 +953,7 @@ void TeleportAction::Start(double simTime, double dt)
 	{
 		object_->pos_.CalcRoutePosition();
 	}
+
 
 	LOG("%s New position:", object_->name_.c_str());
 	object_->pos_.Print();
@@ -1014,7 +1072,7 @@ void SynchronizeAction::Start(double simTime, double dt)
 	OSCAction::Start(simTime, dt);
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LONGITUDINAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
 	{
 		// longitudinal motion controlled elsewhere
 		return;
@@ -1029,7 +1087,7 @@ void SynchronizeAction::Step(double simTime, double)
 	sim_time_ = simTime;
 
 	if (object_->GetControllerMode() == Controller::Mode::MODE_OVERRIDE &&
-		object_->IsControllerActiveOnDomains(Controller::Domain::CTRL_LONGITUDINAL))
+		object_->IsControllerActiveOnDomains(ControlDomains::DOMAIN_LONG))
 	{
 		// longitudinal motion controlled elsewhere
 		return;
@@ -1397,6 +1455,42 @@ void VisibilityAction::Start(double simTime, double dt)
 void VisibilityAction::Step(double, double)
 {
 	OSCAction::End();
+}
+
+int OverrideControlAction::AddOverrideStatus(Object::OverrideActionStatus status)
+{
+	overrideActionList.push_back(status);
+	if (status.type < Object::OverrideType::OVERRIDE_NR_TYPES)
+	{
+		if (status.type == Object::OverrideType::OVERRIDE_STEERING_WHEEL)
+		{
+			if (status.active)
+			{
+				domain_ = static_cast<ControlDomains>(static_cast<int>(domain_) | static_cast<int>(ControlDomains::DOMAIN_LAT));
+			}
+			else
+			{
+				domain_ = static_cast<ControlDomains>(static_cast<int>(domain_) & ~static_cast<int>(ControlDomains::DOMAIN_LAT));
+			}
+		}
+		else
+		{
+			if (status.active)
+			{
+				domain_ = static_cast<ControlDomains>(static_cast<int>(domain_) | static_cast<int>(ControlDomains::DOMAIN_LONG));
+			}
+			else
+			{
+				domain_ = static_cast<ControlDomains>(static_cast<int>(domain_) & ~static_cast<int>(ControlDomains::DOMAIN_LONG));
+			}
+		}
+	}
+	else
+	{
+		LOG_AND_QUIT("Unexpected override type: %d", status.type);
+	}
+
+	return 0;
 }
 
 void OverrideControlAction::Start(double simTime, double dt)

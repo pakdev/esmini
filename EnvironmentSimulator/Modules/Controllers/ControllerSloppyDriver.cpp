@@ -25,8 +25,6 @@
 
 using namespace scenarioengine;
 
-static std::mt19937 mt_rand;
-
 #define WHEEL_RADIUS 0.35
 #define SLOPPY_SCALE 5.0  // Magic scale factor to achieve reasonable sloppiness in range 0..1
 
@@ -58,8 +56,6 @@ ControllerSloppyDriver::ControllerSloppyDriver(InitArgs* args) : sloppiness_(0.5
 
 void ControllerSloppyDriver::Init()
 {
-	mt_rand.seed((unsigned int)time(0));
-
 	Controller::Init();
 }
 
@@ -80,17 +76,17 @@ void ControllerSloppyDriver::Step(double timeStep)
 	currentSpeed_ = object_->GetSpeed();
 
 	// Do modification to a local position object and then report to gateway
-	if (object_ && domain_ & Controller::Domain::CTRL_LONGITUDINAL)
+	if (object_ && IsActiveOnDomains(ControlDomains::DOMAIN_LONG))
 	{
 		if (speedTimer_.Expired(time_))
 		{
 			// restart timer - 50% variation
-			double timerValue = speedTimerAverage_ * (1.0 + (1.0 * mt_rand() / mt_rand.max() - 0.5));
+			double timerValue = speedTimerAverage_ * (1.0 + (1.0 * (SE_Env::Inst().GetGenerator())()) / ((SE_Env::Inst().GetGenerator()).max() - 0.5));
 			speedTimer_.Start(time_, timerValue);
 
 			// target speed +/- 35%
 			initSpeed_ = referenceSpeed_ * targetFactor_;
-			targetFactor_ = 1 + 0.7*sloppiness_ * MIN(sloppiness_, 1.0) * (1.0 * mt_rand() / mt_rand.max() - 0.5);
+			targetFactor_ = 1 + 0.7*sloppiness_ * MIN(sloppiness_, 1.0) * (1.0 * (SE_Env::Inst().GetGenerator())() / (SE_Env::Inst().GetGenerator()).max() - 0.5);
 		}
 
 		double steplen = 0;
@@ -131,16 +127,16 @@ void ControllerSloppyDriver::Step(double timeStep)
 		}
 	}
 
-	if (object_ && domain_ & Controller::Domain::CTRL_LATERAL)
+	if (object_ && IsActiveOnDomains(ControlDomains::DOMAIN_LAT))
 	{
 		if (lateralTimer_.Expired(time_))
 		{
 			// max lateral displacement is about half lane width (7/2)
 			tFuzz0 = tFuzzTarget;
-			tFuzzTarget = 5.0 * sloppiness_ * MIN(sloppiness_, 1.0) * (1.0 * mt_rand() / mt_rand.max() - 0.5);
+			tFuzzTarget = 5.0 * sloppiness_ * MIN(sloppiness_, 1.0) * (1.0 * (SE_Env::Inst().GetGenerator())() / (SE_Env::Inst().GetGenerator()).max() - 0.5);
 
 			// restart timer - 50% variation
-			double timerValue = lateralTimerAverage_ * (1.0 + (1.0 * mt_rand() / mt_rand.max() - 0.5));
+			double timerValue = lateralTimerAverage_ * (1.0 + (1.0 * (SE_Env::Inst().GetGenerator())() / (SE_Env::Inst().GetGenerator()).max() - 0.5));
 			lateralTimer_.Start(time_, timerValue);
 		}
 		double h_error;
@@ -183,13 +179,12 @@ void ControllerSloppyDriver::Step(double timeStep)
 		}
 	}
 
-	gateway_->reportObject(object_->id_, object_->name_, static_cast<int>(object_->type_), object_->category_, object_->model_id_,
-		object_->GetActivatedControllerType(), object_->boundingbox_, 0, currentSpeed_, object_->wheel_angle_, object_->wheel_rot_, &object_->pos_);
+	gateway_->updateObjectPos(object_->id_, 0.0, &object_->pos_);
 
 	Controller::Step(timeStep);
 }
 
-void ControllerSloppyDriver::Activate(int domainMask)
+void ControllerSloppyDriver::Activate(ControlDomains domainMask)
 {
 	if (object_)
 	{

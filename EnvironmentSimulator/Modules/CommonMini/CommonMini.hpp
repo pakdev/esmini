@@ -14,6 +14,7 @@
 
 
 #include <vector>
+#include <random>
 #include <fstream>
 #include <string>
 #define _USE_MATH_DEFINES
@@ -74,6 +75,24 @@ __int64 SE_getSystemTime();
 void SE_sleep(unsigned int msec);
 double SE_getSimTimeStep(__int64 &time_stamp, double min_time_step, double max_time_step);
 
+// Useful types
+
+enum class ControlDomains
+{
+	DOMAIN_NONE = 0,
+	DOMAIN_LONG = 1,
+	DOMAIN_LAT = 2,
+	DOMAIN_BOTH = 3  // can also be interpreted as bitwise OR: DIM_LONG | DIM_LAT
+};
+
+enum class EntityScaleMode
+{
+	NONE,
+	BB_TO_MODEL,  // Scale bounding box to 3D model
+	MODEL_TO_BB,  // Scale 3D model to specified or generated bounding box
+};
+
+std::string ControlDomain2Str(ControlDomains domains);
 
 // Useful operations
 
@@ -107,6 +126,11 @@ double GetAngleSum(double angle1, double angle2);
   Retrieve the angle in the interval [0, 2xPI]
 */
 double GetAngleInInterval2PI(double angle);
+
+/**
+  Retrieve the angle in the interval [-PI, PI]
+*/
+double GetAngleInIntervalMinusPIPlusPI(double angle);
 
 /**
   Retrieve difference between two angles
@@ -194,6 +218,20 @@ bool PointInBetweenVectorEndpoints(double x3, double y3, double x1, double y1, d
 double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y);
 
 /**
+ Measure distance from point to line. Strategy: Find and measure distance to closest/perpendicular point on line
+ @param x3 X-coordinate of the point to check
+ @param y3 Y-coordinate of the point to check
+ @param x1 X-coordinate of the first point on line
+ @param y1 Y-coordinate of the first point on line
+ @param x2 X-coordinate of the second first point on line
+ @param y2 Y-coordinate of the second first point on line
+ @param x Return the X-coordinate of closest point on line
+ @param y Return the Y-coordinate of closest point on line
+ @return the distance
+*/
+double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y);
+
+/**
   Find out whether the point is left or right to a vector
 */
 int PointSideOfVec(double px, double py, double vx1, double vy1, double vx2, double vy2);
@@ -219,6 +257,13 @@ void RotateVec2D(double x, double y, double angle, double &xr, double &yr);
 void Global2LocalCoordinates(double xTargetGlobal, double yTargetGlobal,
 							 double xHostGlobal, double yHostGlobal, double angleHost,
 							 double &targetXforHost, double &targetYforHost);
+
+/**
+  Convert target (x,y) coordinates to the global coordinate system
+*/
+void Local2GlobalCoordinates(double &xTargetGlobal, double &yTargetGlobal,
+							 double xHostGlobal, double yHostGlobal, double thetaGlobal,
+							 double targetXforHost, double targetYforHost);
 
 /**
   Normalize a 2D vector
@@ -334,10 +379,10 @@ public:
 		int numvehicles, std::string csv_filename);
 
 	//Logging function called by VehicleLogger object using pass by value
-	void LogVehicleData(bool isendline, double timestamp, char const* name_, int id_, double speed_,
-		double wheel_angle_, double wheel_rot_, double posX_, double posY_, double posZ_, double accX_, double accY_,
-		double accZ_, double distance_road_, double distance_lanem_, double heading_, double heading_rate_,
-		double heading_angle_, double heading_angle_driving_direction_, double pitch_, double curvature_, ...);
+	void LogVehicleData(bool isendline, double timestamp, char const* name, int id, double speed,
+		double wheel_angle, double wheel_rot, double posX, double posY, double posZ, double velX, double velY,
+		double velZ, double accX, double accY, double accZ, double distance_road, double distance_lanem, double heading,
+		double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature, ...);
 
 	void SetCallback(FuncPtr callback);
 
@@ -368,14 +413,14 @@ public:
 	std::string opt_desc_;
 	std::string opt_arg_;
 	bool set_;
-	std::string arg_value_;
+	std::vector<std::string> arg_value_;
 	std::string default_value_;
 
 	SE_Option(std::string opt_str, std::string opt_desc, std::string opt_arg = "") :
-		opt_str_(opt_str), opt_desc_(opt_desc), opt_arg_(opt_arg), set_(false), arg_value_("") {}
+		opt_str_(opt_str), opt_desc_(opt_desc), opt_arg_(opt_arg), set_(false) {}
 
 	SE_Option(std::string opt_str, std::string opt_desc, std::string opt_arg, std::string default_value) :
-		opt_str_(opt_str), opt_desc_(opt_desc), opt_arg_(opt_arg), set_(false), arg_value_(""), default_value_(default_value) {}
+		opt_str_(opt_str), opt_desc_(opt_desc), opt_arg_(opt_arg), set_(false), default_value_(default_value) {}
 
 	void Usage();
 };
@@ -392,8 +437,8 @@ public:
 	void PrintArgs(int argc, char *argv[], std::string message = "Unrecognized arguments:");
 	bool GetOptionSet(std::string opt);
 	bool IsOptionArgumentSet(std::string opt);
-	std::string GetOptionArg(std::string opt);
-	void ParseArgs(int *argc, char* argv[]);
+	std::string GetOptionArg(std::string opt, int index = 0);
+	int ParseArgs(int *argc, char* argv[]);
 	std::vector<std::string>& GetOriginalArgs() { return originalArgs_; }
 
 private:
@@ -420,7 +465,7 @@ public:
 	__int64 start_time_;
 	double duration_;
 
-	SE_SystemTimer() : start_time_(0) {}
+	SE_SystemTimer() : start_time_(0), duration_(0) {}
 	void Start()
 	{
 		start_time_ = SE_getSystemTime();
@@ -495,11 +540,11 @@ public:
 
 	// Custom damping factor, set 0 for no damping
 	DampedSpring(double startValue, double targetValue, double tension, double damping) :
-		x_(startValue), x0_(targetValue), t_(tension), d_(damping), v_(0), critical_(false) {};
+		x_(startValue), x0_(targetValue), t_(tension), d_(damping), v_(0), a_(0), critical_(false) {};
 
 	// Critically damped (optimal)
 	DampedSpring(double startValue, double targetValue, double tension) :
-		x_(startValue), x0_(targetValue), t_(tension), d_(2 * sqrt(tension)), v_(0), critical_(true) {};
+		x_(startValue), x0_(targetValue), t_(tension), d_(2 * sqrt(tension)), v_(0), a_(0), critical_(true) {};
 
 	void Update(double timeStep)
 	{
@@ -556,9 +601,10 @@ public:
 	double osiMaxLateralDeviation_;
 	std::string logFilePath_;
 	SE_SystemTime systemTime_;
+	unsigned int seed_;
+	std::mt19937 gen_;
 
-	SE_Env() : osiMaxLongitudinalDistance_(OSI_MAX_LONGITUDINAL_DISTANCE),
-		osiMaxLateralDeviation_(OSI_MAX_LATERAL_DEVIATION), logFilePath_(LOG_FILENAME) {}
+	SE_Env();
 
 	void SetOSIMaxLongitudinalDistance(double maxLongitudinalDistance) { osiMaxLongitudinalDistance_ = maxLongitudinalDistance; }
 	void SetOSIMaxLateralDeviation(double maxLateralDeviation) { osiMaxLateralDeviation_ = maxLateralDeviation; }
@@ -568,6 +614,13 @@ public:
 	int AddPath(std::string path);
 	void ClearPaths() { paths_.clear(); }
 	double GetSystemTime() { return systemTime_.GetS(); }
+	void SetSeed(unsigned int seed)
+	{
+		seed_ = seed;
+		gen_.seed(seed_);
+	}
+	unsigned int GetSeed() { return seed_; }
+	std::mt19937& GetGenerator() { return gen_; }
 
 	/**
 		Specify logfile name, optionally including directory path

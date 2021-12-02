@@ -15,6 +15,7 @@
 
 #include <cmath>
 #include <string>
+#include <map>
 #include <vector>
 #include <list>
 #include "pugixml.hpp"
@@ -90,7 +91,7 @@ namespace roadmanager
 	class Geometry
 	{
 	public:
-		enum GeometryType
+		typedef enum
 		{
 			GEOMETRY_TYPE_UNKNOWN,
 			GEOMETRY_TYPE_LINE,
@@ -98,7 +99,7 @@ namespace roadmanager
 			GEOMETRY_TYPE_SPIRAL,
 			GEOMETRY_TYPE_POLY3,
 			GEOMETRY_TYPE_PARAM_POLY3,
-		};
+		} GeometryType;
 
 		Geometry() : s_(0.0), x_(0.0), y_(0), hdg_(0), length_(0), type_(GeometryType::GEOMETRY_TYPE_UNKNOWN) {}
 		Geometry(double s, double x, double y, double hdg, double length, GeometryType type) :
@@ -690,24 +691,6 @@ namespace roadmanager
 		int lane_id_;
 	};
 
-	enum RoadType
-	{
-		ROADTYPE_UNKNOWN,
-		ROADTYPE_RURAL,
-		ROADTYPE_MOTORWAY,
-		ROADTYPE_TOWN,
-		ROADTYPE_LOWSPEED,
-		ROADTYPE_PEDESTRIAN,
-		ROADTYPE_BICYCLE
-	};
-
-	typedef struct
-	{
-		double s_;
-		RoadType road_type_;
-		double speed_;  // m/s
-	} RoadTypeEntry;
-
 	typedef struct
 	{
 		int fromLane_;
@@ -731,48 +714,256 @@ namespace roadmanager
 	{
 	public:
 
-		enum Type
-		{
-			NONETYPE,
-			T1000001, // traditional red-yellow-green light
-			T1000002, // 2 subtypes: pedestrian light (red or green & only red)
-			T1000003, // Pedestrian Crossing
-			T1000004, // Bicycle Crossing
-			T1000007, // 4 subtypes: pedestrian + cyclists light (red or green & only red & only yellow & only green)
-			T1000008, // 3 subtypes: yellow light (no arrow & left arrow & right arrow)
-			T1000009, // 2 subtypes: red-yellow light & solid yellow or green light
-			T1000010, // 2 subtypes: yellow-green light (only left arrows & only right arrows)
-			T1000011, // 5 subtypes: red-yellow-green light (only left arrows & only right arrows & only straight arrows & straight+left arrows & straight+right arrows)
-			T1000012, // 2 subtypes: green light (left arrow & right arrow)
-			T1000013, // red-green cyclist light
-			T1000014, // yellow tram light
-			T1000015, // yellow pedestrian light
-			T1000016, // yellow bicycle light
-			T1000017, // yellow bus light
-			T1000018, // yellow horse light
-			T1000019, // yellow pedestrian/bicycle light
-			T1000020  // red light (no arrow & left arrow & right arrow)
-		};
-
-		enum SubType
-		{
-			NONESUBTYPE,
-			SUBT10,
-			SUBT20,
-			SUBT30,
-			SUBT40,
-			SUBT50,
-			SUBT60,
-			SUBT70,
-			SUBT80,
-			SUBT90,
-			SUBT100
+		enum Type : int {
+			TYPE_UNKNOWN = 0,
+			TYPE_OTHER = 1,
+			TYPE_DANGER_SPOT = 2,
+			TYPE_ZEBRA_CROSSING = 87,
+			TYPE_FLIGHT = 110,
+			TYPE_CATTLE = 200,
+			TYPE_HORSE_RIDERS = 197,
+			TYPE_AMPHIBIANS = 188,
+			TYPE_FALLING_ROCKS = 96,
+			TYPE_SNOW_OR_ICE = 94,
+			TYPE_LOOSE_GRAVEL = 97,
+			TYPE_WATERSIDE = 102,
+			TYPE_CLEARANCE = 210,
+			TYPE_MOVABLE_BRIDGE = 101,
+			TYPE_RIGHT_BEFORE_LEFT_NEXT_INTERSECTION = 3,
+			TYPE_TURN_LEFT = 4,
+			TYPE_TURN_RIGHT = 5,
+			TYPE_DOUBLE_TURN_LEFT = 6,
+			TYPE_DOUBLE_TURN_RIGHT = 7,
+			TYPE_HILL_DOWNWARDS = 8,
+			TYPE_HILL_UPWARDS = 9,
+			TYPE_UNEVEN_ROAD = 93,
+			TYPE_ROAD_SLIPPERY_WET_OR_DIRTY = 95,
+			TYPE_SIDE_WINDS = 98,
+			TYPE_ROAD_NARROWING = 10,
+			TYPE_ROAD_NARROWING_RIGHT = 12,
+			TYPE_ROAD_NARROWING_LEFT = 11,
+			TYPE_ROAD_WORKS = 13,
+			TYPE_TRAFFIC_QUEUES = 100,
+			TYPE_TWO_WAY_TRAFFIC = 14,
+			TYPE_ATTENTION_TRAFFIC_LIGHT = 15,
+			TYPE_PEDESTRIANS = 103,
+			TYPE_CHILDREN_CROSSING = 106,
+			TYPE_CYCLE_ROUTE = 107,
+			TYPE_DEER_CROSSING = 109,
+			TYPE_UNGATED_LEVEL_CROSSING = 144,
+			TYPE_LEVEL_CROSSING_MARKER = 112,
+			TYPE_RAILWAY_TRAFFIC_PRIORITY = 135,
+			TYPE_GIVE_WAY = 16,
+			TYPE_STOP = 17,
+			TYPE_PRIORITY_TO_OPPOSITE_DIRECTION = 18,
+			TYPE_PRIORITY_TO_OPPOSITE_DIRECTION_UPSIDE_DOWN = 19,
+			TYPE_PRESCRIBED_LEFT_TURN = 20,
+			TYPE_PRESCRIBED_RIGHT_TURN = 21,
+			TYPE_PRESCRIBED_STRAIGHT = 22,
+			TYPE_PRESCRIBED_RIGHT_WAY = 24,
+			TYPE_PRESCRIBED_LEFT_WAY = 23,
+			TYPE_PRESCRIBED_RIGHT_TURN_AND_STRAIGHT = 26,
+			TYPE_PRESCRIBED_LEFT_TURN_AND_STRAIGHT = 25,
+			TYPE_PRESCRIBED_LEFT_TURN_AND_RIGHT_TURN = 27,
+			TYPE_PRESCRIBED_LEFT_TURN_RIGHT_TURN_AND_STRAIGHT = 28,
+			TYPE_ROUNDABOUT = 29,
+			TYPE_ONEWAY_LEFT = 30,
+			TYPE_ONEWAY_RIGHT = 31,
+			TYPE_PASS_LEFT = 32,
+			TYPE_PASS_RIGHT = 33,
+			TYPE_SIDE_LANE_OPEN_FOR_TRAFFIC = 128,
+			TYPE_SIDE_LANE_CLOSED_FOR_TRAFFIC = 129,
+			TYPE_SIDE_LANE_CLOSING_FOR_TRAFFIC = 130,
+			TYPE_BUS_STOP = 137,
+			TYPE_TAXI_STAND = 138,
+			TYPE_BICYCLES_ONLY = 145,
+			TYPE_HORSE_RIDERS_ONLY = 146,
+			TYPE_PEDESTRIANS_ONLY = 147,
+			TYPE_BICYCLES_PEDESTRIANS_SHARED_ONLY = 148,
+			TYPE_BICYCLES_PEDESTRIANS_SEPARATED_LEFT_ONLY = 149,
+			TYPE_BICYCLES_PEDESTRIANS_SEPARATED_RIGHT_ONLY = 150,
+			TYPE_PEDESTRIAN_ZONE_BEGIN = 151,
+			TYPE_PEDESTRIAN_ZONE_END = 152,
+			TYPE_BICYCLE_ROAD_BEGIN = 153,
+			TYPE_BICYCLE_ROAD_END = 154,
+			TYPE_BUS_LANE = 34,
+			TYPE_BUS_LANE_BEGIN = 35,
+			TYPE_BUS_LANE_END = 36,
+			TYPE_ALL_PROHIBITED = 37,
+			TYPE_MOTORIZED_MULTITRACK_PROHIBITED = 38,
+			TYPE_TRUCKS_PROHIBITED = 39,
+			TYPE_BICYCLES_PROHIBITED = 40,
+			TYPE_MOTORCYCLES_PROHIBITED = 41,
+			TYPE_MOPEDS_PROHIBITED = 155,
+			TYPE_HORSE_RIDERS_PROHIBITED = 156,
+			TYPE_HORSE_CARRIAGES_PROHIBITED = 157,
+			TYPE_CATTLE_PROHIBITED = 158,
+			TYPE_BUSES_PROHIBITED = 159,
+			TYPE_CARS_PROHIBITED = 160,
+			TYPE_CARS_TRAILERS_PROHIBITED = 161,
+			TYPE_TRUCKS_TRAILERS_PROHIBITED = 162,
+			TYPE_TRACTORS_PROHIBITED = 163,
+			TYPE_PEDESTRIANS_PROHIBITED = 42,
+			TYPE_MOTOR_VEHICLES_PROHIBITED = 43,
+			TYPE_HAZARDOUS_GOODS_VEHICLES_PROHIBITED = 164,
+			TYPE_OVER_WEIGHT_VEHICLES_PROHIBITED = 165,
+			TYPE_VEHICLES_AXLE_OVER_WEIGHT_PROHIBITED = 166,
+			TYPE_VEHICLES_EXCESS_WIDTH_PROHIBITED = 167,
+			TYPE_VEHICLES_EXCESS_HEIGHT_PROHIBITED = 168,
+			TYPE_VEHICLES_EXCESS_LENGTH_PROHIBITED = 169,
+			TYPE_DO_NOT_ENTER = 44,
+			TYPE_SNOW_CHAINS_REQUIRED = 170,
+			TYPE_WATER_POLLUTANT_VEHICLES_PROHIBITED = 171,
+			TYPE_ENVIRONMENTAL_ZONE_BEGIN = 45,
+			TYPE_ENVIRONMENTAL_ZONE_END = 46,
+			TYPE_NO_U_TURN_LEFT = 47,
+			TYPE_NO_U_TURN_RIGHT = 48,
+			TYPE_PRESCRIBED_U_TURN_LEFT = 49,
+			TYPE_PRESCRIBED_U_TURN_RIGHT = 50,
+			TYPE_MINIMUM_DISTANCE_FOR_TRUCKS = 51,
+			TYPE_SPEED_LIMIT_BEGIN = 52,
+			TYPE_SPEED_LIMIT_ZONE_BEGIN = 53,
+			TYPE_SPEED_LIMIT_ZONE_END = 54,
+			TYPE_MINIMUM_SPEED_BEGIN = 55,
+			TYPE_OVERTAKING_BAN_BEGIN = 56,
+			TYPE_OVERTAKING_BAN_FOR_TRUCKS_BEGIN = 57,
+			TYPE_SPEED_LIMIT_END = 58,
+			TYPE_MINIMUM_SPEED_END = 59,
+			TYPE_OVERTAKING_BAN_END = 60,
+			TYPE_OVERTAKING_BAN_FOR_TRUCKS_END = 61,
+			TYPE_ALL_RESTRICTIONS_END = 62,
+			TYPE_NO_STOPPING = 63,
+			TYPE_NO_PARKING = 64,
+			TYPE_NO_PARKING_ZONE_BEGIN = 65,
+			TYPE_NO_PARKING_ZONE_END = 66,
+			TYPE_RIGHT_OF_WAY_NEXT_INTERSECTION = 67,
+			TYPE_RIGHT_OF_WAY_BEGIN = 68,
+			TYPE_RIGHT_OF_WAY_END = 69,
+			TYPE_PRIORITY_OVER_OPPOSITE_DIRECTION = 70,
+			TYPE_PRIORITY_OVER_OPPOSITE_DIRECTION_UPSIDE_DOWN = 71,
+			TYPE_TOWN_BEGIN = 72,
+			TYPE_TOWN_END = 73,
+			TYPE_CAR_PARKING = 74,
+			TYPE_CAR_PARKING_ZONE_BEGIN = 75,
+			TYPE_CAR_PARKING_ZONE_END = 76,
+			TYPE_SIDEWALK_HALF_PARKING_LEFT = 172,
+			TYPE_SIDEWALK_HALF_PARKING_RIGHT = 173,
+			TYPE_SIDEWALK_PARKING_LEFT = 174,
+			TYPE_SIDEWALK_PARKING_RIGHT = 175,
+			TYPE_SIDEWALK_PERPENDICULAR_HALF_PARKING_LEFT = 176,
+			TYPE_SIDEWALK_PERPENDICULAR_HALF_PARKING_RIGHT = 177,
+			TYPE_SIDEWALK_PERPENDICULAR_PARKING_LEFT = 178,
+			TYPE_SIDEWALK_PERPENDICULAR_PARKING_RIGHT = 179,
+			TYPE_LIVING_STREET_BEGIN = 77,
+			TYPE_LIVING_STREET_END = 78,
+			TYPE_TUNNEL = 79,
+			TYPE_EMERGENCY_STOPPING_LEFT = 80,
+			TYPE_EMERGENCY_STOPPING_RIGHT = 81,
+			TYPE_HIGHWAY_BEGIN = 82,
+			TYPE_HIGHWAY_END = 83,
+			TYPE_EXPRESSWAY_BEGIN = 84,
+			TYPE_EXPRESSWAY_END = 85,
+			TYPE_NAMED_HIGHWAY_EXIT = 183,
+			TYPE_NAMED_EXPRESSWAY_EXIT = 184,
+			TYPE_NAMED_ROAD_EXIT = 185,
+			TYPE_HIGHWAY_EXIT = 86,
+			TYPE_EXPRESSWAY_EXIT = 186,
+			TYPE_ONEWAY_STREET = 187,
+			TYPE_CROSSING_GUARDS = 189,
+			TYPE_DEADEND = 190,
+			TYPE_DEADEND_EXCLUDING_DESIGNATED_ACTORS = 191,
+			TYPE_FIRST_AID_STATION = 194,
+			TYPE_POLICE_STATION = 195,
+			TYPE_TELEPHONE = 196,
+			TYPE_FILLING_STATION = 198,
+			TYPE_HOTEL = 201,
+			TYPE_INN = 202,
+			TYPE_KIOSK = 203,
+			TYPE_TOILET = 204,
+			TYPE_CHAPEL = 205,
+			TYPE_TOURIST_INFO = 206,
+			TYPE_REPAIR_SERVICE = 207,
+			TYPE_PEDESTRIAN_UNDERPASS = 208,
+			TYPE_PEDESTRIAN_BRIDGE = 209,
+			TYPE_CAMPER_PLACE = 213,
+			TYPE_ADVISORY_SPEED_LIMIT_BEGIN = 214,
+			TYPE_ADVISORY_SPEED_LIMIT_END = 215,
+			TYPE_PLACE_NAME = 216,
+			TYPE_TOURIST_ATTRACTION = 217,
+			TYPE_TOURIST_ROUTE = 218,
+			TYPE_TOURIST_AREA = 219,
+			TYPE_SHOULDER_NOT_PASSABLE_MOTOR_VEHICLES = 220,
+			TYPE_SHOULDER_UNSAFE_TRUCKS_TRACTORS = 221,
+			TYPE_TOLL_BEGIN = 222,
+			TYPE_TOLL_END = 223,
+			TYPE_TOLL_ROAD = 224,
+			TYPE_CUSTOMS = 225,
+			TYPE_INTERNATIONAL_BORDER_INFO = 226,
+			TYPE_STREETLIGHT_RED_BAND = 227,
+			TYPE_FEDERAL_HIGHWAY_ROUTE_NUMBER = 228,
+			TYPE_HIGHWAY_ROUTE_NUMBER = 229,
+			TYPE_HIGHWAY_INTERCHANGE_NUMBER = 230,
+			TYPE_EUROPEAN_ROUTE_NUMBER = 231,
+			TYPE_FEDERAL_HIGHWAY_DIRECTION_LEFT = 232,
+			TYPE_FEDERAL_HIGHWAY_DIRECTION_RIGHT = 233,
+			TYPE_PRIMARY_ROAD_DIRECTION_LEFT = 234,
+			TYPE_PRIMARY_ROAD_DIRECTION_RIGHT = 235,
+			TYPE_SECONDARY_ROAD_DIRECTION_LEFT = 236,
+			TYPE_SECONDARY_ROAD_DIRECTION_RIGHT = 237,
+			TYPE_DIRECTION_DESIGNATED_ACTORS_LEFT = 238,
+			TYPE_DIRECTION_DESIGNATED_ACTORS_RIGHT = 239,
+			TYPE_ROUTING_DESIGNATED_ACTORS = 240,
+			TYPE_DIRECTION_TO_HIGHWAY_LEFT = 143,
+			TYPE_DIRECTION_TO_HIGHWAY_RIGHT = 108,
+			TYPE_DIRECTION_TO_LOCAL_DESTINATION_LEFT = 127,
+			TYPE_DIRECTION_TO_LOCAL_DESTINATION_RIGHT = 136,
+			TYPE_CONSOLIDATED_DIRECTIONS = 118,
+			TYPE_STREET_NAME = 119,
+			TYPE_DIRECTION_PREANNOUNCEMENT = 120,
+			TYPE_DIRECTION_PREANNOUNCEMENT_LANE_CONFIG = 121,
+			TYPE_DIRECTION_PREANNOUNCEMENT_HIGHWAY_ENTRIES = 122,
+			TYPE_HIGHWAY_ANNOUNCEMENT = 123,
+			TYPE_OTHER_ROAD_ANNOUNCEMENT = 124,
+			TYPE_HIGHWAY_ANNOUNCEMENT_TRUCK_STOP = 125,
+			TYPE_HIGHWAY_PREANNOUNCEMENT_DIRECTIONS = 126,
+			TYPE_POLE_EXIT = 88,
+			TYPE_HIGHWAY_DISTANCE_BOARD = 180,
+			TYPE_DETOUR_LEFT = 181,
+			TYPE_DETOUR_RIGHT = 182,
+			TYPE_NUMBERED_DETOUR = 131,
+			TYPE_DETOUR_BEGIN = 132,
+			TYPE_DETOUR_END = 133,
+			TYPE_DETOUR_ROUTING_BOARD = 134,
+			TYPE_OPTIONAL_DETOUR = 111,
+			TYPE_OPTIONAL_DETOUR_ROUTING = 199,
+			TYPE_ROUTE_RECOMMENDATION = 211,
+			TYPE_ROUTE_RECOMMENDATION_END = 212,
+			TYPE_ANNOUNCE_LANE_TRANSITION_LEFT = 192,
+			TYPE_ANNOUNCE_LANE_TRANSITION_RIGHT = 193,
+			TYPE_ANNOUNCE_RIGHT_LANE_END = 90,
+			TYPE_ANNOUNCE_LEFT_LANE_END = 89,
+			TYPE_ANNOUNCE_RIGHT_LANE_BEGIN = 115,
+			TYPE_ANNOUNCE_LEFT_LANE_BEGIN = 116,
+			TYPE_ANNOUNCE_LANE_CONSOLIDATION = 117,
+			TYPE_DETOUR_CITY_BLOCK = 142,
+			TYPE_GATE = 141,
+			TYPE_POLE_WARNING = 91,
+			TYPE_TRAFFIC_CONE = 140,
+			TYPE_MOBILE_LANE_CLOSURE = 139,
+			TYPE_REFLECTOR_POST = 114,
+			TYPE_DIRECTIONAL_BOARD_WARNING = 113,
+			TYPE_GUIDING_PLATE = 104,
+			TYPE_GUIDING_PLATE_WEDGES = 105,
+			TYPE_PARKING_HAZARD = 99,
+			TYPE_TRAFFIC_LIGHT_GREEN_ARROW = 92,
+			TrafficSign_MainSign_Classification_Type_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
+			TrafficSign_MainSign_Classification_Type_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
 		};
 
 		Signal(double s, double t, int id, std::string name, bool dynamic, Orientation orientation, double z_offset, std::string country,
-		int type, int sub_type, double value, std::string unit, double height, double width, std::string text, double h_offset,
+		int type, double value, std::string unit, double height, double width, std::string text, double h_offset,
 		double pitch, double roll) : s_(s), t_(t), id_(id), name_(name), dynamic_(dynamic), orientation_(orientation), z_offset_(z_offset),
-		country_(country), type_(type), sub_type_(sub_type), value_(value), unit_(unit), height_(height), width_(width), text_(text),
+		country_(country), type_(type), value_(value), unit_(unit), height_(height), width_(width), text_(text),
 		h_offset_(h_offset), pitch_(pitch), roll_(roll), length_(0) {}
 
 		std::string GetName() { return name_; }
@@ -785,7 +976,6 @@ namespace roadmanager
 		double GetZOffset() { return z_offset_; }
 		Orientation GetOrientation() { return orientation_; }
 		int GetType() { return type_; }
-		int GetSubType() { return sub_type_; }
 		double GetHeight() { return height_; }
 		double GetWidth() { return width_; }
 		bool IsDynamic() { return dynamic_; }
@@ -794,6 +984,7 @@ namespace roadmanager
 		double GetValue() { return value_; }
 		std::string GetUnit() { return unit_; }
 		std::string GetText() { return text_; }
+		static Type GetTypeFromString(const std::string& type);
 
 	private:
 		double s_;
@@ -805,7 +996,6 @@ namespace roadmanager
 		double z_offset_;
 		std::string country_;
 		int type_;
-		int sub_type_;
 		double value_;
 		std::string unit_;
 		double height_;
@@ -815,6 +1005,7 @@ namespace roadmanager
 		double pitch_;
 		double roll_;
 		double length_;
+		static const std::map<std::string, Type> types_mapping_;
 	};
 
 	class OutlineCorner
@@ -995,14 +1186,32 @@ namespace roadmanager
 	{
 	public:
 
-		typedef enum
+		enum class RoadType
+		{
+			ROADTYPE_UNKNOWN,
+			ROADTYPE_RURAL,
+			ROADTYPE_MOTORWAY,
+			ROADTYPE_TOWN,
+			ROADTYPE_LOWSPEED,
+			ROADTYPE_PEDESTRIAN,
+			ROADTYPE_BICYCLE
+		};
+
+		typedef struct
+		{
+			double s_;
+			RoadType road_type_;
+			double speed_;  // m/s
+		} RoadTypeEntry;
+
+		enum class RoadRule
 		{
 			RIGHT_HAND_TRAFFIC,
 			LEFT_HAND_TRAFFIC,
 			ROAD_RULE_UNDEFINED
-		} RoadRule;
+		};
 
-		Road(int id, std::string name, RoadRule rule = RIGHT_HAND_TRAFFIC) : id_(id), name_(name), length_(0), junction_(-1), rule_(rule) {}
+		Road(int id, std::string name, RoadRule rule = RoadRule::RIGHT_HAND_TRAFFIC) : id_(id), name_(name), length_(0), junction_(-1), rule_(rule) {}
 		~Road();
 
 		void Print();
@@ -1238,6 +1447,30 @@ namespace roadmanager
 		std::string name_;
 	};
 
+	typedef struct
+	{
+		double a_;
+		double axis_;
+		double b_;
+		std::string ellps_;
+		double k_;
+		double k_0_;
+		double lat_0_;
+		double lon_0_;
+		double lon_wrap_;
+		double over_;
+		std::string pm_;
+		std::string proj_;
+		std::string units_;
+		std::string vunits_;
+		double x_0_;
+		double y_0_;
+		std::string datum_;
+		std::string geo_id_grids_;
+		double zone_;
+		int towgs84_;
+	} GeoReference;
+
 	class OpenDrive
 	{
 	public:
@@ -1329,6 +1562,12 @@ namespace roadmanager
 		Controller* GetControllerById(int id);
 		void AddController(Controller controller) { controller_.push_back(controller); }
 
+		GeoReference* GetGeoReference();
+		std::string GetGeoReferenceAsString();
+		void ParseGeoLocalization(const std::string& geoLocalization);
+
+		bool LoadSignalsByCountry(const std::string& country);
+
 		void Print();
 
 	private:
@@ -1336,7 +1575,9 @@ namespace roadmanager
 		std::vector<Road*> road_;
 		std::vector<Junction*> junction_;
 		std::vector<Controller> controller_;
+		GeoReference geo_ref_;
 		std::string odr_filename_;
+		std::map<std::string, std::string> signals_types_;
 	};
 
 	typedef struct
@@ -1374,23 +1615,23 @@ namespace roadmanager
 		double dyLocal;         // delta y (local coordinate system)
 	} PositionDiff;
 
-	typedef enum
+	enum class CoordinateSystem
 	{
 		CS_UNDEFINED,
 		CS_ENTITY,
 		CS_LANE,
 		CS_ROAD,
 		CS_TRAJECTORY
-	} CoordinateSystem;
+	};
 
-	typedef enum
+	enum class RelativeDistanceType
 	{
 		REL_DIST_UNDEFINED,
 		REL_DIST_LATERAL,
 		REL_DIST_LONGITUDINAL,
 		REL_DIST_CARTESIAN,
 		REL_DIST_EUCLIDIAN
-	} RelativeDistanceType;
+	};
 
 	// Forward declarations
 	class Route;
@@ -1400,7 +1641,7 @@ namespace roadmanager
 	{
 	public:
 
-		enum PositionType
+		enum class PositionType
 		{
 			NORMAL,
 			ROUTE,
@@ -1410,20 +1651,20 @@ namespace roadmanager
 			RELATIVE_ROAD
 		};
 
-		enum OrientationType
+		enum class OrientationType
 		{
 			ORIENTATION_RELATIVE,
 			ORIENTATION_ABSOLUTE
 		};
 
-		enum LookAheadMode
+		enum class LookAheadMode
 		{
 			LOOKAHEADMODE_AT_LANE_CENTER,
 			LOOKAHEADMODE_AT_ROAD_CENTER,
 			LOOKAHEADMODE_AT_CURRENT_LATERAL_OFFSET,
 		};
 
-		enum ErrorCode
+		enum class ErrorCode
 		{
 			ERROR_NO_ERROR = 0,
 			ERROR_GENERIC = -1,
@@ -1432,18 +1673,18 @@ namespace roadmanager
 			ERROR_OFF_ROAD = -4,
 		};
 
-		enum UpdateTrackPosMode
+		enum class UpdateTrackPosMode
 		{
 			UPDATE_NOT_XYZH,
 			UPDATE_XYZ,
 			UPDATE_XYZH
 		};
 
-		typedef enum
+		enum class PositionStatusMode
 		{
 			POS_STATUS_END_OF_ROAD = (1 << 0),
 			POS_STATUS_END_OF_ROUTE = (1 << 1)
-		} POSITION_STATUS_MODES;
+		};
 
 		typedef enum
 		{
@@ -1471,9 +1712,9 @@ namespace roadmanager
 		@param updateXY update world coordinates x, y... as well - or not
 		@return Non zero return value indicates error of some kind
 		*/
-		int SetTrackPos(int track_id, double s, double t, bool UpdateXY = true);
+		ErrorCode SetTrackPos(int track_id, double s, double t, bool UpdateXY = true);
 		void ForceLaneId(int lane_id);
-		int SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
+		ErrorCode SetLanePos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
 		void SetLaneBoundaryPos(int track_id, int lane_id, double s, double offset, int lane_section_idx = -1);
 		void SetRoadMarkPos(int track_id, int lane_id, int roadmark_idx, int roadmarktype_idx, int roadmarkline_idx, double s, double offset, int lane_section_idx = -1);
 
@@ -1524,7 +1765,7 @@ namespace roadmanager
 		@param roadId If != -1 only this road will be considered else all roads will be searched
 		@return Non zero return value indicates error of some kind
 		*/
-		int XYZH2TrackPos(double x, double y, double z, double h, bool connectedOnly = false, int roadId = -1);
+		ErrorCode XYZH2TrackPos(double x, double y, double z, double h, bool connectedOnly = false, int roadId = -1);
 
 		int MoveToConnectingRoad(RoadLink *road_link, ContactPointType &contact_point_type, double junctionSelectorAngle = -1.0);
 
@@ -1564,13 +1805,11 @@ namespace roadmanager
 		@param ds Distance to move, negative will move backwards
 		@return Non zero return value indicates error of some kind, most likely End Of Route
 		*/
-		int MoveRouteDS(double ds);
+		ErrorCode MoveRouteDS(double ds);
 
 		/**
-		Move current position to specified S-value along the route
-		@param route_s Distance to move, negative will move backwards
-		@param laneId Explicit (not delta/offset) lane ID
-		@param laneOffset Explicit (not delta/offset) lane offset value
+		Move current position along the route
+		@param ds Distance to move, negative will move backwards
 		@return Non zero return value indicates error of some kind
 		*/
 		int SetRouteLanePosition(Route* route, double route_s, int laneId, double  laneOffset);
@@ -1580,7 +1819,7 @@ namespace roadmanager
 		@param route_s Distance to move, negative will move backwards
 		@return Non zero return value indicates error of some kind, most likely End Of Route
 		*/
-		int SetRouteS(Route* route, double route_s);
+		ErrorCode SetRouteS(Route* route, double route_s);
 
 		/**
 		Move current position forward, or backwards, ds meters along the trajectory
@@ -1628,9 +1867,11 @@ namespace roadmanager
 		Find out the difference between two position objects, in effect subtracting the values
 		It can be used to calculate the distance from current position to another one (pos_b)
 		@param pos_b The position from which to subtract the current position (this position object)
+		@param bothDirections Set to true in order to search also backwards from object
+		@param maxDist Don't look further than this
 		@return true if position found and parameter values are valid, else false
 		*/
-		bool Delta(Position* pos_b, PositionDiff& diff, double maxDist = LARGE_NUMBER) const;
+		bool Delta(Position* pos_b, PositionDiff& diff, bool bothDirections = true, double maxDist = LARGE_NUMBER) const;
 
 		/**
 		Find out the distance, on specified system and type, between two position objects
@@ -1662,17 +1903,17 @@ namespace roadmanager
 		@param lookahead_distance The distance, along the road, to the point
 		@param data Struct to fill in calculated values, see typdef for details
 		@param lookAheadMode Measurement strategy: Along reference lane, lane center or current lane offset. See roadmanager::Position::LookAheadMode enum
-		@return 0 if successful, -1 if not
+		@return 0 if successful, other codes see Position::ErrorCode
 		*/
-		int GetProbeInfo(double lookahead_distance, RoadProbeInfo *data, LookAheadMode lookAheadMode);
+		ErrorCode GetProbeInfo(double lookahead_distance, RoadProbeInfo *data, LookAheadMode lookAheadMode);
 
 		/**
 		Get information suitable for driver modeling of a point at a specified distance from object along the road ahead
 		@param target_pos The target position
 		@param data Struct to fill in calculated values, see typdef for details
-		@return 0 if successful, -1 if not
+		@return 0 if successful, other codes see Position::ErrorCode
 		*/
-		int GetProbeInfo(Position *target_pos, RoadProbeInfo *data);
+		ErrorCode GetProbeInfo(Position *target_pos, RoadProbeInfo *data);
 
 		/**
 		Get information of current lane at a specified distance from object along the road ahead
@@ -1690,9 +1931,7 @@ namespace roadmanager
 		@param data Struct to fill in calculated values, see typdef for details
 		@return 0 if successful, -1 if not
 		*/
-//		int GetTrailInfo(double lookahead_distance, RoadLaneInfo *data);
-
-		void CalcProbeTarget(Position *target, RoadProbeInfo *data);
+		int CalcProbeTarget(Position *target, RoadProbeInfo *data);
 
 		/**
 		Move position along the road network, forward or backward, from the current position
@@ -1701,16 +1940,21 @@ namespace roadmanager
 		@param ds distance to move from current position
 		@param dLaneOffset delta lane offset (adding to current position lane offset)
 		@param junctionSelectorAngle Desired direction [0:2pi] from incoming road direction (angle = 0), set -1 to randomize
+		@return 0 if successful, other codes see Position::ErrorCode
 		*/
-		int MoveAlongS(double ds, double dLaneOffset, double junctionSelectorAngle);
+		ErrorCode MoveAlongS(double ds, double dLaneOffset, double junctionSelectorAngle);
 
 		/**
 		Move position along the road network, forward or backward, from the current position
 		It will automatically follow connecting lanes between connected roads
 		If multiple options (only possible in junctions) it will choose randomly
 		@param ds distance to move from current position
+		@return 0 if successful, other codes see Position::ErrorCode
 		*/
-		int MoveAlongS(double ds) { return MoveAlongS(ds, 0.0, -1.0); }
+		ErrorCode MoveAlongS(double ds)
+		{
+			return MoveAlongS(ds, 0.0, -1.0);
+		}
 
 		/**
 		Retrieve the track/road ID from the position object
@@ -1877,6 +2121,83 @@ namespace roadmanager
 		double GetVelX() { return velX_; }
 		double GetVelY() { return velY_; }
 		double GetVelZ() { return velZ_; }
+
+		/**
+		Get lateral component of velocity in vehicle local coordinate system
+		*/
+		double GetVelLat();
+
+		/**
+		Get longitudinal component of velocity in vehicle local coordinate system
+		*/
+		double GetVelLong();
+
+		/**
+		Get lateral and longitudinal component of velocity in vehicle local coordinate system
+		This is slightly more effecient than calling GetVelLat and GetVelLong separately
+		@param vlat reference parameter returning lateral velocity
+		@param vlong reference parameter returning longitudinal velocity
+		@return -
+		*/
+		void GetVelLatLong(double& vlat, double& vlong);
+
+		/**
+		Get lateral component of acceleration in vehicle local coordinate system
+		*/
+		double GetAccLat();
+
+		/**
+		Get longitudinal component of acceleration in vehicle local coordinate system
+		*/
+		double GetAccLong();
+
+		/**
+		Get lateral and longitudinal component of acceleration in vehicle local coordinate system
+		This is slightly more effecient than calling GetAccLat and GetAccLong separately
+		@param alat reference parameter returning lateral acceleration
+		@param along reference parameter returning longitudinal acceleration
+		@return -
+		*/
+		void GetAccLatLong(double& alat, double& along);
+
+		/**
+		Get lateral component of velocity in road coordinate system
+		*/
+		double GetVelT();
+
+		/**
+		Get longitudinal component of velocity in road coordinate system
+		*/
+		double GetVelS();
+
+		/**
+		Get lateral and longitudinal component of velocity in road coordinate system
+		This is slightly more effecient than calling GetVelT and GetVelS separately
+		@param vt reference parameter returning lateral velocity
+		@param vs reference parameter returning longitudinal velocity
+		@return -
+		*/
+		void GetVelTS(double& vt, double& vs);
+
+		/**
+		Get lateral component of acceleration in road coordinate system
+		*/
+		double GetAccT();
+
+		/**
+		Get longitudinal component of acceleration in road coordinate system
+		*/
+		double GetAccS();
+
+		/**
+		Get lateral and longitudinal component of acceleration in road coordinate system
+		This is slightly more effecient than calling GetAccT and GetAccS separately
+		@param at reference parameter returning lateral acceleration
+		@param as reference parameter returning longitudinal acceleration
+		@return -
+		*/
+		void GetAccTS(double& at, double& as);
+
 		double GetAccX() { return accX_; }
 		double GetAccY() { return accY_; }
 		double GetAccZ() { return accZ_; }
@@ -1890,6 +2211,7 @@ namespace roadmanager
 		int GetStatusBitMask() { return status_; }
 
 		void SetOrientationType(OrientationType type) { orientation_type_ = type; }
+		OrientationType GetOrientationType() { return orientation_type_; }
 		void SetAlignModeH(ALIGN_MODE mode) { align_h_ = mode; }
 		void SetAlignModeP(ALIGN_MODE mode) { align_p_ = mode; }
 		void SetAlignModeR(ALIGN_MODE mode) { align_r_ = mode; }
@@ -1931,7 +2253,7 @@ namespace roadmanager
 
 	protected:
 		void Track2Lane();
-		int Track2XYZ();
+		ErrorCode Track2XYZ();
 		void Lane2Track();
 		void RoadMark2Track();
 		/**
@@ -1939,7 +2261,7 @@ namespace roadmanager
 		*/
 		void LaneBoundary2Track();
 		void XYZ2Track();
-		int SetLongitudinalTrackPos(int track_id, double s);
+		ErrorCode SetLongitudinalTrackPos(int track_id, double s);
 		bool EvaluateRoadZPitchRoll();
 
 		// Control lane belonging

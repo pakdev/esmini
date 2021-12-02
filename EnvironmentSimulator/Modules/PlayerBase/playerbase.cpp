@@ -54,6 +54,7 @@ ScenarioPlayer::ScenarioPlayer(int &argc, char *argv[]) :
 
 #ifdef _USE_OSG
 	viewerState_ = ViewerState::VIEWER_STATE_NOT_STARTED;
+	OSISensorDetection = nullptr;
 #endif
 
 	int retval = Init();
@@ -123,6 +124,11 @@ void ScenarioPlayer::Frame(double timestep_s)
 {
 	static bool messageShown = false;
 
+	while ( (scenarioEngine->getSimulationTime() < scenarioEngine->GetTrueTime() ) && scenarioEngine->getSimulationTime() > 0 )
+	{
+		ScenarioFramePart(timestep_s);
+	}
+
 	ScenarioFrame(timestep_s);
 
 	if (!headless && viewer_)
@@ -158,25 +164,36 @@ void ScenarioPlayer::Frame()
 	}
 }
 
+void ScenarioPlayer::ScenarioFramePart(double timestep_s)
+{
+	mutex.Lock();
+	scenarioEngine->step(timestep_s);
+
+	scenarioEngine->prepareGroundTruth(timestep_s);
+	scenarioGateway->WriteStatesToFile();
+	mutex.Unlock();
+}
+
 void ScenarioPlayer::ScenarioFrame(double timestep_s)
 {
 	mutex.Lock();
 
 	if (scenarioEngine->step(timestep_s) == 0)
 	{
+
 		// Check for any callbacks to be made
-		for (size_t i = 0; i < callback.size(); i++)
+		for (size_t i = 0; i < objCallback.size(); i++)
 		{
-			ObjectState* os = scenarioGateway->getObjectStatePtrById(callback[i].id);
+			ObjectState* os = scenarioGateway->getObjectStatePtrById(objCallback[i].id);
 			if (os)
 			{
 				ObjectStateStruct state;
 				state = os->getStruct();
-				callback[i].func(&state, callback[i].data);
+				objCallback[i].func(&state, objCallback[i].data);
 			}
 		}
 
-		scenarioEngine->prepareOSIGroundTruth(timestep_s);
+		scenarioEngine->prepareGroundTruth(timestep_s);
 
 		scenarioGateway->WriteStatesToFile();
 
@@ -192,17 +209,25 @@ void ScenarioPlayer::ScenarioFrame(double timestep_s)
 			sensor[i]->Update();
 		}
 #ifdef _USE_OSI
-		osiReporter->ReportSensors(sensor);
-
-		// Update OSI info
-		if (osiReporter->IsFileOpen() || osiReporter->GetSocket())
+		if (scenarioEngine->getSimulationTime() == scenarioEngine->GetTrueTime())
 		{
-			if (osi_counter % osi_freq_ == 0)
+			osiReporter->ReportSensors(sensor);
+
+			// Update OSI info
+			if (osiReporter->IsFileOpen() || osiReporter->GetSocket())
 			{
-				osiReporter->UpdateOSIGroundTruth(scenarioGateway->objectState_);
+				if (osi_counter % osi_freq_ == 0)
+				{
+					osiReporter->UpdateOSIGroundTruth(scenarioGateway->objectState_);
+					if (osi_counter == 0)
+					{
+						// Clear the static data now when it has been reported once
+						osiReporter->ClearOSIGroundTruth();
+					}
+				}
+				// Update counter after modulo-check since first frame should always be reported
+				osi_counter++;
 			}
-			// Update counter after modulo-check since first frame should always be reported
-			osi_counter++;
 		}
 #endif  // USE_OSI
 
@@ -234,57 +259,33 @@ void ScenarioPlayer::ViewerFrame()
 
 	mutex.Lock();
 
-	// Add or remove cars (for sumo)
-
-	if (scenarioEngine->entities.object_.size() > viewer_->entities_.size())
+	// remove deleted cars
+	osg::Vec4 trail_color;
+	trail_color.set(color_blue[0], color_blue[1], color_blue[2], 1.0);
+	for (size_t i = 0; i < viewer_->entities_.size() && i < scenarioEngine->entities.object_.size(); i++)
 	{
-		// add cars missing
-		for (size_t i = 0; i < scenarioEngine->entities.object_.size(); i++)
+		if (scenarioEngine->entities.object_[i]->name_ != viewer_->entities_[i]->name_ ||
+			scenarioEngine->entities.object_[i]->model3d_ != viewer_->entities_[i]->filename_)
 		{
-			bool toadd = true;
-			if (scenarioEngine->entities.object_[i]->type_ == Object::Type::VEHICLE)
-			{
-				for (size_t j = 0; j < viewer_->entities_.size(); j++)
-				{
-					if (scenarioEngine->entities.object_[i]->name_ == viewer_->entities_[j]->name_)
-					{
-						toadd = false;
-					}
-				}
-				if (toadd)
-				{
-					// add car
-					osg::Vec4 trail_color;
-					trail_color.set(color_blue[0], color_blue[1], color_blue[2], 1.0);
-					viewer_->AddEntityModel(scenarioEngine->entities.object_[i]->model_filepath_, trail_color,
-						viewer::EntityModel::EntityType::ENTITY_TYPE_VEHICLE, false,
-						scenarioEngine->entities.object_[i]->name_, &scenarioEngine->entities.object_[i]->boundingbox_);
-				}
-			}
+			// Object has most probably been deleted from the entity list
+			viewer_->RemoveCar(i);
+			i--;  // test same object again against next in viewer list
 		}
 	}
-	else if (scenarioEngine->entities.object_.size() < viewer_->entities_.size())
+
+	// Add missing cars
+	while (viewer_->entities_.size() < scenarioEngine->entities.object_.size())
 	{
-		// remove obsolete cars
-		for (size_t j = 0; j < viewer_->entities_.size(); j++)
-		{
-			if (viewer_->entities_[j]->GetType() == viewer::EntityModel::EntityType::ENTITY_TYPE_VEHICLE)
-			{
-				bool toremove = true;
-				for (size_t i = 0; i < scenarioEngine->entities.object_.size(); i++)
-				{
-					if (scenarioEngine->entities.object_[i]->name_ == viewer_->entities_[j]->name_)
-					{
-						toremove = false;
-					}
-				}
-				if (toremove)
-				{
-					// remove car
-					viewer_->RemoveCar(viewer_->entities_[j]->name_);
-				}
-			}
-		}
+		Object* obj = scenarioEngine->entities.object_[viewer_->entities_.size()];
+		viewer_->AddEntityModel(viewer_->CreateEntityModel(obj->model3d_, trail_color,
+			viewer::EntityModel::EntityType::VEHICLE, false,
+			obj->name_, &obj->boundingbox_, obj->scaleMode_));
+	}
+
+	// remove obsolete cars
+	while (viewer_->entities_.size() > scenarioEngine->entities.object_.size())
+	{
+		viewer_->RemoveCar(viewer_->entities_.size() - 1);
 	}
 
 	// Visualize entities
@@ -306,7 +307,7 @@ void ScenarioPlayer::ViewerFrame()
 			entity->trajectory_->Disable();
 		}
 
-		if (entity->GetType() == viewer::EntityModel::EntityType::ENTITY_TYPE_VEHICLE)
+		if (entity->GetType() == viewer::EntityModel::EntityType::VEHICLE)
 		{
 			viewer::CarModel* car = (viewer::CarModel*)entity;
 			car->UpdateWheels(obj->wheel_angle_, obj->wheel_rot_);
@@ -349,8 +350,8 @@ void ScenarioPlayer::ViewerFrame()
 	if (viewer_->currentCarInFocus_ >= 0 && viewer_->currentCarInFocus_ < viewer_->entities_.size())
 	{
 		Object* obj = scenarioEngine->entities.object_[viewer_->currentCarInFocus_];
-		snprintf(str_buf, sizeof(str_buf), "%.2fs entity[%d]: %s %.2fkm/h %.2fm (%d, %d, %.2f, %.2f) / (%.2f, %.2f %.2f)", scenarioEngine->getSimulationTime(),
-			viewer_->currentCarInFocus_, obj->name_.c_str(), 3.6 * obj->speed_, obj->odometer_,
+		snprintf(str_buf, sizeof(str_buf), "%.2fs entity[%d]: %s (%d) %.2fkm/h %.2fm (%d, %d, %.2f, %.2f) / (%.2f, %.2f %.2f)", scenarioEngine->getSimulationTime(),
+			viewer_->currentCarInFocus_, obj->name_.c_str(), obj->GetId(), 3.6 * obj->speed_, obj->odometer_,
 			obj->pos_.GetTrackId(), obj->pos_.GetLaneId(), fabs(obj->pos_.GetOffset()) < SMALL_NUMBER ? 0 : obj->pos_.GetOffset(),
 			obj->pos_.GetS(), obj->pos_.GetX(), obj->pos_.GetY(), obj->pos_.GetH());
 	}
@@ -371,6 +372,31 @@ void ScenarioPlayer::ViewerFrame()
 		quit_request = true;
 	}
 
+}
+
+void ScenarioPlayer::CaptureNextFrame()
+{
+	if (viewer_)
+	{
+		viewer_->CaptureNextFrame();
+	}
+}
+
+void ScenarioPlayer::CaptureContinuously(bool state)
+{
+	if (viewer_)
+	{
+		viewer_->CaptureContinuously(state);
+	}
+}
+
+void ScenarioPlayer::AddCustomCamera(double x, double y, double z, double h, double p)
+{
+	if (viewer_)
+	{
+		viewer_->AddCustomCamera(x, y, z, h, p);
+		viewer_->SetCameraMode(-1);  // activate last camera which is the one just added
+	}
 }
 
 void ScenarioPlayer::CloseViewer()
@@ -403,6 +429,12 @@ int ScenarioPlayer::InitViewer()
 		viewer_->ClearNodeMaskBits(viewer::NodeMask::NODE_MASK_INFO);
 	}
 
+	if (opt.GetOptionSet("capture_screen"))
+	{
+		LOG("Activate continuous screen capture");
+		viewer_->CaptureContinuously(true);
+	}
+
 	if ((arg_str = opt.GetOptionArg("trail_mode")) != "")
 	{
 		int mask = strtoi(arg_str);
@@ -412,6 +444,12 @@ int ScenarioPlayer::InitViewer()
 		}
 		viewer_->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_TRAIL_LINES |
 			viewer::NodeMask::NODE_MASK_TRAIL_DOTS, mask * viewer::NodeMask::NODE_MASK_TRAIL_LINES);
+	}
+
+	if (opt.GetOptionSet("hide_trajectories"))
+	{
+		LOG("Hide trajectories");
+		viewer_->ClearNodeMaskBits(viewer::NodeMask::NODE_MASK_TRAJECTORY_LINES);
 	}
 
 	if (opt.GetOptionArg("road_features") == "on")
@@ -436,6 +474,35 @@ int ScenarioPlayer::InitViewer()
 	if (opt.GetOptionSet("sensors"))
 	{
 		viewer_->SetNodeMaskBits(viewer::NodeMask::NODE_MASK_OBJECT_SENSORS);
+	}
+
+	if (opt.GetOptionSet("custom_camera") == true)
+	{
+		int counter = 0;
+
+		while ((arg_str = opt.GetOptionArg("custom_camera", counter)) != "")
+		{
+			size_t pos = 0;
+			double v[5];
+			for (int i = 0; i < 5; i++)
+			{
+				pos = arg_str.find(",");
+				if (i < 4 && pos == std::string::npos)
+				{
+					LOG_AND_QUIT("Expected custom_camera <x,y,z,h,p>, got only %d values", i+1);
+				}
+				v[i] = strtod(arg_str.substr(0, pos));
+				arg_str.erase(0, pos == std::string::npos ? pos : pos + 1);
+			}
+			if (!arg_str.empty())
+			{
+				LOG_AND_QUIT("Expected custom_camera <x,y,z,h,p>, got too many values. Make sure only five values is specified");
+			}
+
+			viewer_->AddCustomCamera(v[0], v[1], v[2], v[3], v[4]);
+			LOG("Created custom camera %d (%.2f, %.2f, %.2f, %.2f, %.2f)", counter, v[0], v[1], v[2], v[3], v[4]);
+			counter++;
+		}
 	}
 
 	if ((arg_str = opt.GetOptionArg("camera_mode")) != "")
@@ -463,6 +530,10 @@ int ScenarioPlayer::InitViewer()
 		else if (arg_str == "driver")
 		{
 			viewer_->SetCameraMode(osgGA::RubberbandManipulator::RB_MODE_DRIVER);
+		}
+		else if (arg_str == "custom")
+		{
+			viewer_->SetCameraMode(osgGA::RubberbandManipulator::RB_MODE_CUSTOM);
 		}
 		else
 		{
@@ -509,9 +580,9 @@ int ScenarioPlayer::InitViewer()
 			road_sensor = true;
 		}
 
-		if (viewer_->AddEntityModel(obj->model_filepath_, trail_color,
-			obj->type_ == Object::Type::VEHICLE ? viewer::EntityModel::EntityType::ENTITY_TYPE_VEHICLE : viewer::EntityModel::EntityType::ENTITY_TYPE_OTHER,
-			road_sensor, obj->name_, &obj->boundingbox_) == 0)
+		if (viewer_->AddEntityModel(viewer_->CreateEntityModel(obj->model3d_, trail_color,
+			obj->type_ == Object::Type::VEHICLE ? viewer::EntityModel::EntityType::VEHICLE : viewer::EntityModel::EntityType::OTHER,
+			road_sensor, obj->name_, &obj->boundingbox_, obj->scaleMode_)) != 0)
 		{
 			delete viewer_;
 			viewer_ = 0;
@@ -522,7 +593,7 @@ int ScenarioPlayer::InitViewer()
 		viewer::VisibilityCallback* cb = new viewer::VisibilityCallback(viewer_->entities_.back()->txNode_, obj, viewer_->entities_.back());
 		viewer_->entities_.back()->txNode_->setUpdateCallback(cb);
 
-		if (viewer_->entities_.back()->GetType() == viewer::EntityModel::ENTITY_TYPE_VEHICLE)
+		if (viewer_->entities_.back()->GetType() == viewer::EntityModel::EntityType::VEHICLE)
 		{
 			viewer::CarModel* model = (viewer::CarModel*)viewer_->entities_.back();
 
@@ -618,6 +689,24 @@ void ScenarioPlayer::AddObjectSensor(int object_index, double x, double y, doubl
 	}
 }
 
+void ScenarioPlayer::AddOSIDetection(int object_index)
+{
+	if (!headless)
+	{
+#ifdef _USE_OSG
+		if (viewer_)
+		{
+			if(!OSISensorDetection)
+			{
+				mutex.Lock();
+				OSISensorDetection = new viewer::OSISensorDetection(viewer_->entities_[object_index]->txNode_);
+				mutex.Unlock();
+			}
+		}
+#endif
+	}
+}
+
 void ScenarioPlayer::ShowObjectSensors(bool mode)
 {
 	// Switch on sensor visualization as defult when sensors are added
@@ -652,7 +741,9 @@ int ScenarioPlayer::Init()
 	opt.AddOption("osc", "OpenSCENARIO filename (required) - if path includes spaces, enclose with \"\"", "filename");
 	opt.AddOption("aa_mode", "Anti-alias mode=number of multisamples (subsamples, 0=off, 4=default)", "mode");
 	opt.AddOption("bounding_boxes", "Show entities as bounding boxes (toggle modes on key ',') ");
-	opt.AddOption("camera_mode", "Initial camera mode (\"orbit\" (default), \"fixed\", \"flex\", \"flex-orbit\", \"top\", \"driver\") (toggle during simulation by press 'k') ", "mode");
+	opt.AddOption("capture_screen", "Continuous screen capture. Warning: Many jpeg files will be created");
+	opt.AddOption("camera_mode", "Initial camera mode (\"orbit\" (default), \"fixed\", \"flex\", \"flex-orbit\", \"top\", \"driver\", \"custom\") (swith with key 'k') ", "mode");
+	opt.AddOption("custom_camera", "Additional custom camera position <x,y,z,h,p,r> (multiple occurrences supported)", "position");
 	opt.AddOption("csv_logger", "Log data for each vehicle in ASCII csv format", "csv_filename");
 	opt.AddOption("disable_controllers", "Disable controllers");
 	opt.AddOption("disable_log", "Prevent logfile from being created");
@@ -661,6 +752,7 @@ int ScenarioPlayer::Init()
 	opt.AddOption("generate_no_road_objects", "Do not generate any OpenDRIVE road objects (e.g. when part of referred 3D model)");
 	opt.AddOption("headless", "Run without viewer");
 	opt.AddOption("help", "Show this help message");
+	opt.AddOption("hide_trajectories", "Hide trajectories from start (toggle with key 'n')");
 	opt.AddOption("info_text", "Show info text HUD (\"on\" (default), \"off\") (toggle during simulation by press 'i') ", "mode");
 	opt.AddOption("logfile_path", "logfile path/filename, e.g. \"../esmini.log\" (default: log.txt)", "path");
 	opt.AddOption("osc_str", "OpenSCENARIO XML string", "string");
@@ -671,10 +763,11 @@ int ScenarioPlayer::Init()
 	opt.AddOption("osi_points", "Show OSI road pointss (toggle during simulation by press 'y') ");
 	opt.AddOption("osi_receiver_ip", "IP address where to send OSI UDP packages", "IP address");
 #endif
-	opt.AddOption("path", "Search path prefix for assets, e.g. OpenDRIVE files (will be concatenated with filepath)", "path");
+	opt.AddOption("path", "Search path prefix for assets, e.g. OpenDRIVE files (multiple occurrences supported)", "path");
 	opt.AddOption("record", "Record position data into a file for later replay", "filename");
 	opt.AddOption("road_features", "Show OpenDRIVE road features (\"on\", \"off\"  (default)) (toggle during simulation by press 'o') ", "mode");
 	opt.AddOption("save_generated_model", "Save generated 3D model (n/a when a scenegraph is loaded)");
+	opt.AddOption("seed", "Specify seed number for random generator", "number");
 	opt.AddOption("sensors", "Show sensor frustums (toggle during simulation by press 'r') ");
 	opt.AddOption("server", "Launch server to receive state of external Ego simulator");
 	opt.AddOption("threads", "Run viewer in a separate thread, parallel to scenario engine");
@@ -682,7 +775,11 @@ int ScenarioPlayer::Init()
 	opt.AddOption("version", "Show version and quit");
 
 	exe_path_ = argv_[0];
-	opt.ParseArgs(&argc_, argv_);
+	if (opt.ParseArgs(&argc_, argv_) != 0)
+	{
+		opt.PrintUsage();
+		return -2;
+	}
 
 	if (opt.GetOptionSet("version"))
 	{
@@ -755,16 +852,33 @@ int ScenarioPlayer::Init()
 		LOG("Run simulation decoupled from realtime, with fixed timestep: %.2f", GetFixedTimestep());
 	}
 
-	if ((arg_str = opt.GetOptionArg("path")) != "")
+	if (opt.GetOptionArg("path") != "")
 	{
-		SE_Env::Inst().AddPath(arg_str);
-		LOG("Added path %s", arg_str.c_str());
+		int counter = 0;
+		while ((arg_str = opt.GetOptionArg("path", counter)) != "")
+		{
+			SE_Env::Inst().AddPath(arg_str);
+			LOG("Added path %s", arg_str.c_str());
+			counter++;
+		}
 	}
 
 	if (opt.GetOptionSet("disable_controllers"))
 	{
 		disable_controllers_ = true;
 		LOG("Disable entity controllers");
+	}
+
+	// Use specific seed for repeatable scenarios?
+	if ((arg_str = opt.GetOptionArg("seed")) != "")
+	{
+		unsigned int seed = static_cast<unsigned int>(std::stoul(arg_str));
+		LOG("Using specified seed %u", seed);
+		SE_Env::Inst().SetSeed(seed);
+	}
+	else
+	{
+		LOG("Generated seed %u", SE_Env::Inst().GetSeed());
 	}
 
 	// Create scenario engine
@@ -774,6 +888,7 @@ int ScenarioPlayer::Init()
 		{
 			scenarioEngine = new ScenarioEngine(arg_str, disable_controllers_);
 			Logger::Inst().SetTimePtr(scenarioEngine->GetSimulationTimePtr());
+			//Logger::Inst().SetTimePtr(scenarioEngine->GetTrueTimePtr());
 		}
 		else if ((arg_str = opt.GetOptionArg("osc_str")) != "")
 		{
@@ -786,6 +901,7 @@ int ScenarioPlayer::Init()
 			}
 			scenarioEngine = new ScenarioEngine(doc, disable_controllers_);
 			Logger::Inst().SetTimePtr(scenarioEngine->GetSimulationTimePtr());
+			//Logger::Inst().SetTimePtr(scenarioEngine->GetTrueTimePtr());
 		}
 		else
 		{
@@ -914,7 +1030,7 @@ void ScenarioPlayer::RegisterObjCallback(int id, ObjCallbackFunc func, void *dat
 	cb.id = id;
 	cb.func = func;
 	cb.data = data;
-	callback.push_back(cb);
+	objCallback.push_back(cb);
 }
 
 void ScenarioPlayer::UpdateCSV_Log()
@@ -942,7 +1058,7 @@ void ScenarioPlayer::UpdateCSV_Log()
 		//Log the extracted data of ego vehicle and additonal scenario vehicles
 		CSV_Log->LogVehicleData(isendline, scenarioEngine->getSimulationTime(), name_,
 			obj->id_, obj->speed_, obj->wheel_angle_, obj->wheel_rot_,
-			pos.GetX(), pos.GetY(), pos.GetZ(), pos.GetAccX(), pos.GetAccY(), pos.GetAccZ(),
+			pos.GetX(), pos.GetY(), pos.GetZ(), pos.GetVelX(), pos.GetVelY(), pos.GetVelZ(), pos.GetAccX(), pos.GetAccY(), pos.GetAccZ(),
 			pos.GetS(), pos.GetT(), pos.GetH(), pos.GetHRate(), pos.GetHRelative(), pos.GetHRelativeDrivingDirection(),
 			pos.GetP(), pos.GetCurvature());
 	}
@@ -953,7 +1069,7 @@ int ScenarioPlayer::GetNumberOfParameters()
 	return scenarioEngine->scenarioReader->parameters.GetNumberOfParameters();
 }
 
-const char* ScenarioPlayer::GetParameterName(int index, int* type)
+const char* ScenarioPlayer::GetParameterName(int index, OSCParameterDeclarations::ParameterType* type)
 {
 	return scenarioEngine->scenarioReader->parameters.GetParameterName(index, type);
 }

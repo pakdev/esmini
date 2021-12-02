@@ -21,9 +21,6 @@
 
 namespace scenarioengine
 {
-	class ScenarioPlayer;
-
-	// base class for controllers
 	class ControllerACC: public Controller
 	{
 	public:
@@ -36,16 +33,17 @@ namespace scenarioengine
 
 		void Init();
 		void Step(double timeStep);
-		void Activate(int domainMask);
+		void Activate(ControlDomains domainMask);
 		void ReportKeyEvent(int key, bool down);
+		void SetSetSpeed(double setSpeed) { setSpeed_ = setSpeed; }
 
 	private:
 		vehicle::Vehicle vehicle_;
 		double timeGap_;  // target headway time
 		bool active_;
+		bool setSpeedSet_;
 		double setSpeed_;
 		double currentSpeed_;
-		DampedSpring regulator_;
 	};
 
 	Controller* InstantiateControllerACC(void* args);

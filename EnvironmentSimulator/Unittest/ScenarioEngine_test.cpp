@@ -5,6 +5,8 @@
 #include <stdexcept>
 
 #include "ScenarioEngine.hpp"
+#include "ScenarioReader.hpp"
+#include "ControllerUDPDriver.hpp"
 #include "pugixml.hpp"
 #include "simple_expr.h"
 
@@ -12,6 +14,7 @@ using namespace roadmanager;
 using namespace scenarioengine;
 
 #define TRIG_ERR_MARGIN 0.001
+#define LOG_TO_CONSOLE 0
 
 TEST(DistanceTest, CalcDistanceVariations)
 {
@@ -190,6 +193,80 @@ TEST(DistanceTest, CalcDistancePointAcrossIntersection)
 
 }
 
+TEST(DistanceTest, CalcEntityDistanceFreespace)
+{
+    Position::GetOpenDrive()->LoadOpenDriveFile("../../../resources/xodr/straight_500m.xodr");
+    OpenDrive* odr = Position::GetOpenDrive();
+
+    ASSERT_NE(odr, nullptr);
+    EXPECT_EQ(odr->GetNumOfRoads(), 1);
+
+    Object obj0(Object::Type::VEHICLE);
+    obj0.boundingbox_.center_ = { 1.5, 0.0, 0.0 };
+    obj0.boundingbox_.dimensions_ = { 2.0, 5.0, 2.0 };
+    obj0.pos_.SetLanePos(1, -1, 20.0, 0);
+    obj0.pos_.SetHeading(0.0);
+
+    Object obj1(Object::Type::VEHICLE);
+    obj1.boundingbox_.center_ = { 1.5, 0.0, 0.0 };
+    obj1.boundingbox_.dimensions_ = { 2.0, 5.0, 2.0 };
+    obj1.pos_.SetLanePos(1, -1, 30.0, 0);
+    obj1.pos_.SetHeading(0.0);
+
+    // Measure from X, Y point to object in cartesian coordinates
+    double latDist = 0.0;
+    double longDist = 0.0;
+    double dist = 0.0;
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, 0, 0), false);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, &latDist, &longDist), false);
+    EXPECT_NEAR(latDist, 0.0, 1e-5);
+    EXPECT_NEAR(longDist, 5.0, 1e-5);
+    EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 5.0, 1e-3);
+
+    obj1.pos_.SetLanePos(1, -1, 15.1, 1.9);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, 0, 0), true);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, &latDist, &longDist), true);
+    EXPECT_NEAR(latDist, 0.0, 1e-5);
+    EXPECT_NEAR(longDist, 0.0, 1e-5);
+    EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 0.0, 1e-3);
+
+    obj1.pos_.SetLanePos(1, -1, 15.1, 2.9);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, 0, 0), false);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, &latDist, &longDist), false);
+    EXPECT_NEAR(latDist, 0.9, 1e-5);
+    EXPECT_NEAR(longDist, 0.0, 1e-5);
+    EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 0.9, 1e-3);
+
+    obj1.pos_.SetLanePos(1, -1, 10.0, 0.0);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, 0, 0), false);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, &latDist, &longDist), false);
+    EXPECT_NEAR(latDist, 0.0, 1e-5);
+    EXPECT_NEAR(longDist, -5.0, 1e-5);
+    EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 5.0, 1e-3);
+
+    obj1.pos_.SetLanePos(1, -1, 10.0, 0.0);
+    obj1.pos_.SetHeadingRelative(M_PI);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, 0, 0), false);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, &latDist, &longDist), false);
+    EXPECT_NEAR(latDist, 0.0, 1e-5);
+    EXPECT_NEAR(longDist, -8.0, 1e-5);
+    EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 8.0, 1e-3);
+
+    obj1.pos_.SetLanePos(1, -1, 30.0, 5.0);
+    obj1.pos_.SetHeadingRelative(0.5);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, 0, 0), false);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, &latDist, &longDist), false);
+    EXPECT_NEAR(latDist, 2.64299, 1e-5);
+    EXPECT_NEAR(longDist, 4.64299, 1e-5);
+    EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 6.183198, 1e-3);
+
+    obj1.pos_.SetHeadingRelative(-0.5);
+    EXPECT_EQ(obj0.CollisionAndRelativeDistLatLong(&obj1, &latDist, &longDist), false);
+    EXPECT_NEAR(latDist, 1.204715, 1e-5);
+    EXPECT_NEAR(longDist, 4.64299, 1e-5);
+    EXPECT_NEAR(dist = obj0.FreeSpaceDistance(&obj1, &latDist, &longDist), 5.876278, 1e-3);
+}
+
 TEST(TrajectoryTest, EnsureContinuation)
 {
     double dt = 0.01;
@@ -199,7 +276,7 @@ TEST(TrajectoryTest, EnsureContinuation)
     for (int i = 0; i < (int)(1.0/dt); i++)
     {
         se->step(dt);
-        se->prepareOSIGroundTruth(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_NEAR(se->entities.object_[0]->pos_.GetX(), 4.95, 1e-5);
     ASSERT_NEAR(se->entities.object_[0]->pos_.GetY(), -1.535, 1e-5);
@@ -207,7 +284,7 @@ TEST(TrajectoryTest, EnsureContinuation)
     for (int i = 0; i < (int)(2.0 / dt); i++)
     {
         se->step(dt);
-        se->prepareOSIGroundTruth(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_NEAR(se->entities.object_[0]->pos_.GetX(), 14.92759, 1e-5);
     ASSERT_NEAR(se->entities.object_[0]->pos_.GetY(), -1.18333, 1e-5);
@@ -215,10 +292,10 @@ TEST(TrajectoryTest, EnsureContinuation)
     for (int i = 0; i < (int)(1.5 / dt); i++)
     {
         se->step(dt);
-        se->prepareOSIGroundTruth(dt);
+        se->prepareGroundTruth(dt);
     }
-    ASSERT_NEAR(se->entities.object_[0]->pos_.GetX(), 21.31489, 1e-5);
-    ASSERT_NEAR(se->entities.object_[0]->pos_.GetY(), 2.56606, 1e-5);
+    ASSERT_NEAR(se->entities.object_[0]->pos_.GetX(), 21.35235, 1e-5);
+    ASSERT_NEAR(se->entities.object_[0]->pos_.GetY(), 2.59918, 1e-5);
 }
 
 TEST(ExpressionTest, EnsureResult)
@@ -269,6 +346,9 @@ TEST(OptionsTest, TestOptionHandling)
         "my_road.xodr",
         "--window",
         "--option2",
+        "option2Value",
+        "--option2",
+        "option2Value2",
         "--option3",
         "--option4"
     };
@@ -281,19 +361,25 @@ TEST(OptionsTest, TestOptionHandling)
         strncpy(argv[i], args[i], strlen(args[i]) + 1);
     }
 
-    opt.ParseArgs(&argc, argv);
+    ASSERT_EQ(opt.ParseArgs(&argc, argv), -1);
 
     ASSERT_EQ(opt.GetOptionSet("no_arg"), false);
     ASSERT_EQ(opt.GetOptionSet("osc_file"), true);
     ASSERT_EQ(opt.GetOptionSet("window"), true);
-    ASSERT_EQ(opt.GetOptionSet("option2"), false);
+    ASSERT_EQ(opt.GetOptionSet("option2"), true);
     ASSERT_EQ(opt.GetOptionSet("option3"), true);
     ASSERT_EQ(opt.GetOptionSet("option4"), false);
     ASSERT_EQ(opt.GetOptionSet("option5"), false);
     ASSERT_EQ(opt.GetOptionArg("window"), "");
     ASSERT_EQ(opt.GetOptionArg("osc_file"), "my_scenario.xosc");
     ASSERT_EQ(opt.GetOptionArg("odr_file"), "my_road.xodr");
+    ASSERT_EQ(opt.GetOptionArg("option2"), "option2Value");
+    ASSERT_EQ(opt.GetOptionArg("option2", 1), "option2Value2");
     ASSERT_EQ(opt.GetOptionArg("option3"), "55");
+
+    // test without last argument, should return OK
+    argc = sizeof(args-1) / sizeof(char*);
+    ASSERT_EQ(opt.ParseArgs(&argc, argv), 0);
 
     // Clean up
     for (int i = 0; i < argc; i++)
@@ -375,6 +461,8 @@ TEST(JunctionTest, JunctionSelectorTest)
     for (int i = 0; i < sizeof(angles) / sizeof(double); i++)
     {
         ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/junction-selector.xosc");
+        se->step(0.0);
+        se->prepareGroundTruth(0.0);
         ASSERT_NE(se, nullptr);
 
         // Turn always right
@@ -383,6 +471,7 @@ TEST(JunctionTest, JunctionSelectorTest)
         while (se->getSimulationTime() < durations[i] && se->GetQuitFlag() != true)
         {
             se->step(dt);
+            se->prepareGroundTruth(dt);
         }
         ASSERT_EQ(se->entities.object_[0]->pos_.GetTrackId(), roadIds[i]);
         delete se;
@@ -393,15 +482,18 @@ TEST(ConditionTest, CollisionTest)
 {
     double dt = 0.01;
 
-    double timestamps[] = { 5.42, 5.43, 6.28, 6.29, 7.02, 8.67 };
+    double timestamps[] = { 5.23, 5.24, 6.23, 6.25, 7.09, 8.77 };
 
     // Initialize the scenario and disable interactive controller
     ScenarioEngine* se = new ScenarioEngine("../../../EnvironmentSimulator/Unittest/xosc/test-collision-detection.xosc", true);
+    se->step(0.0);
+    se->prepareGroundTruth(0.0);
     ASSERT_NE(se, nullptr);
 
     while (se->getSimulationTime() < timestamps[0] && se->GetQuitFlag() != true)
     {
         se->step(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[1]), false);
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[2]), false);
@@ -409,6 +501,7 @@ TEST(ConditionTest, CollisionTest)
     while (se->getSimulationTime() < timestamps[1] && se->GetQuitFlag() != true)
     {
         se->step(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[1]), false);
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[2]), true);
@@ -416,6 +509,7 @@ TEST(ConditionTest, CollisionTest)
     while (se->getSimulationTime() < timestamps[2] && se->GetQuitFlag() != true)
     {
         se->step(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[1]), false);
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[2]), true);
@@ -423,6 +517,7 @@ TEST(ConditionTest, CollisionTest)
     while (se->getSimulationTime() < timestamps[3] && se->GetQuitFlag() != true)
     {
         se->step(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[1]), true);
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[2]), true);
@@ -430,6 +525,7 @@ TEST(ConditionTest, CollisionTest)
     while (se->getSimulationTime() < timestamps[4] && se->GetQuitFlag() != true)
     {
         se->step(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[1]), true);
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[2]), false);
@@ -437,6 +533,7 @@ TEST(ConditionTest, CollisionTest)
     while (se->getSimulationTime() < timestamps[5] && se->GetQuitFlag() != true)
     {
         se->step(dt);
+        se->prepareGroundTruth(dt);
     }
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[1]), false);
     ASSERT_EQ(se->entities.object_[0]->Collision(se->entities.object_[2]), false);
@@ -444,8 +541,209 @@ TEST(ConditionTest, CollisionTest)
     delete se;
 }
 
+TEST(ControllerTest, UDPDriverModelTestAsynchronous)
+{
+    double dt = 0.01;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../scripts/udp-driver/two_cars_in_open_space.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities.object_.size(), 2);
+
+    // Replace controllers
+    for (int i = 0; i < 2; i++)
+    {
+        scenarioengine::Controller::InitArgs args;
+        args.name = "UDPDriverModel Controller";
+        args.type = ControllerUDPDriver::GetTypeNameStatic();
+        args.parameters = 0;
+        args.gateway = se->getScenarioGateway();
+        args.properties = new OSCProperties();
+        OSCProperties::Property property;
+        property.name_ = "port";
+        property.value_ = std::to_string(0);
+        args.properties->property_.push_back(property);
+        property.name_ = "basePort";
+        property.value_ = std::to_string(61900);
+        args.properties->property_.push_back(property);
+        property.name_ = "inputMode";
+        property.value_ = "vehicleStateXYZHPR";
+        args.properties->property_.push_back(property);
+        ControllerUDPDriver* controller = (ControllerUDPDriver*)InstantiateControllerUDPDriver(&args);
+
+        delete se->entities.object_[i]->controller_;
+        delete args.properties;
+
+        controller->Assign(se->entities.object_[i]);
+        se->scenarioReader->controller_[i] = controller;
+        se->entities.object_[i]->controller_ = controller;
+    }
+
+    // assign controllers
+    se->step(dt);
+
+    // stimulate driver input
+    UDPClient* udpClient= new UDPClient(61900, "127.0.0.1");
+
+    ControllerUDPDriver::DMMessage msg;
+
+    msg.header.frameNumber = 0;
+    msg.header.version = 1;
+    msg.header.objectId = 0;
+    msg.header.inputMode = static_cast<int>(ControllerUDPDriver::InputMode::VEHICLE_STATE_XYH);
+
+    msg.message.stateXYZHPR.h = 0.3;
+    msg.message.stateXYZHPR.x = 20.0;
+    msg.message.stateXYZHPR.y = 30.0;
+
+    udpClient->Send((char*)&msg, sizeof(msg));
+
+    // Make sure last message is applied
+    msg.message.stateXYZHPR.y = 40;
+    udpClient->Send((char*)&msg, sizeof(msg));
+
+    // read messages and report updated states
+    se->step(dt);
+    // another step for scenarioengine to fetch and apply updated states
+    se->step(dt);
+
+    EXPECT_DOUBLE_EQ(se->entities.object_[0]->pos_.GetY(), 40.0);
+
+    delete se;
+    delete udpClient;
+}
+
+TEST(ControllerTest, UDPDriverModelTestSynchronous)
+{
+    double dt = 0.01;
+
+    ScenarioEngine* se = new ScenarioEngine("../../../scripts/udp-driver/two_cars_in_open_space.xosc");
+    ASSERT_NE(se, nullptr);
+    ASSERT_EQ(se->entities.object_.size(), 2);
+
+    // Replace controllers
+    for (int i = 0; i < 2; i++)
+    {
+        scenarioengine::Controller::InitArgs args;
+        args.name = "UDPDriverModel Controller";
+        args.type = ControllerUDPDriver::GetTypeNameStatic();
+        args.parameters = 0;
+        args.gateway = se->getScenarioGateway();
+        args.properties = new OSCProperties();
+        OSCProperties::Property property;
+        property.name_ = "execMode";
+        property.value_ = "synchronous";
+        args.properties->property_.push_back(property);
+        property.name_ = "port";
+        property.value_ = std::to_string(0);
+        args.properties->property_.push_back(property);
+        property.name_ = "basePort";
+        property.value_ = std::to_string(61910);
+        args.properties->property_.push_back(property);
+        property.name_ = "inputMode";
+        property.value_ = "vehicleStateXYZHPR";
+        args.properties->property_.push_back(property);
+        property.name_ = "timoutMs";
+        property.value_ = std::to_string(500);
+        args.properties->property_.push_back(property);
+        ControllerUDPDriver* controller = (ControllerUDPDriver*)InstantiateControllerUDPDriver(&args);
+
+        delete se->entities.object_[i]->controller_;
+        delete args.properties;
+
+        controller->Assign(se->entities.object_[i]);
+        se->scenarioReader->controller_[i] = controller;
+        se->entities.object_[i]->controller_ = controller;
+    }
+
+    // assign controllers
+    se->step(dt);
+
+    // stimulate driver input
+    UDPClient* udpClient = new UDPClient(61910, "127.0.0.1");
+
+    ControllerUDPDriver::DMMessage msg;
+
+    msg.header.frameNumber = 0;
+    msg.header.version = 1;
+    msg.header.objectId = 0;
+    msg.header.inputMode = static_cast<int>(ControllerUDPDriver::InputMode::VEHICLE_STATE_XYZHPR);
+
+    msg.message.stateXYZHPR.h = 0.3;
+    msg.message.stateXYZHPR.x = 20.0;
+    msg.message.stateXYZHPR.y = 30.0;
+
+    udpClient->Send((char*)&msg, sizeof(msg));
+
+    // Put another message on queue of first vehicle
+    msg.header.frameNumber++;
+    msg.message.stateXYZHPR.y = 40;
+    udpClient->Send((char*)&msg, sizeof(msg));
+
+    // read messages and report updated states
+    se->step(dt);
+
+    // another step for scenarioengine to fetch and apply updated states
+    se->step(dt);
+
+    // In synchronous mode one message is consumed each time step
+    // Expect the first message to be applied, the second has not
+    // yet been processed
+    EXPECT_DOUBLE_EQ(se->entities.object_[0]->pos_.GetY(), 30.0);
+
+    // another step for scenarioengine to fetch and apply the second message
+    se->step(dt);
+    EXPECT_DOUBLE_EQ(se->entities.object_[0]->pos_.GetY(), 40.0);
+
+    // second vehicle has not been updated (no message sent)
+    se->step(dt);
+    EXPECT_DOUBLE_EQ(se->entities.object_[1]->pos_.GetY(), 6.5);
+
+    // Create a sender for second vehicle as well
+    UDPClient* udpClient2 = new UDPClient(61911, "127.0.0.1");
+
+    msg.header.frameNumber = 0;
+    msg.header.version = 1;
+    msg.header.objectId = 1;
+    msg.header.inputMode = static_cast<int>(ControllerUDPDriver::InputMode::VEHICLE_STATE_XYZHPR);
+
+    msg.message.stateXYZHPR.h = 0.3;
+    msg.message.stateXYZHPR.x = 90.0;
+    msg.message.stateXYZHPR.y = -10.0;
+
+    udpClient2->Send((char*)&msg, sizeof(msg));
+
+    msg.header.frameNumber = 2;
+    msg.header.objectId = 0;
+    msg.message.stateXYZHPR.x = 150.0;
+    udpClient->Send((char*)&msg, sizeof(msg));
+
+    se->step(dt);
+    se->step(dt);
+    EXPECT_DOUBLE_EQ(se->entities.object_[0]->pos_.GetX(), 150.0);
+    EXPECT_DOUBLE_EQ(se->entities.object_[1]->pos_.GetX(), 90.0);
+    EXPECT_DOUBLE_EQ(se->entities.object_[1]->pos_.GetY(), -10.0);
+
+    delete se;
+    delete udpClient;
+}
+
+#if LOG_TO_CONSOLE
+static void log_callback(const char* str)
+{
+    printf("%s\n", str);
+}
+#endif
+
 int main(int argc, char **argv)
 {
+#if LOG_TO_CONSOLE
+    if (!(Logger::Inst().IsCallbackSet()))
+    {
+        Logger::Inst().SetCallback(log_callback);
+    }
+#endif
+    //testing::GTEST_FLAG(filter) = "suite*:*EnsureContinuation*";
+
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

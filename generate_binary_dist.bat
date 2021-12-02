@@ -19,6 +19,8 @@ IF NOT EXIST %target_dir%\run\replayer ( mkdir %target_dir%\run\replayer )
 IF NOT EXIST %target_dir%\bin ( mkdir %target_dir%\bin )
 IF NOT EXIST %target_dir%\lib ( mkdir %target_dir%\lib )
 IF NOT EXIST %target_dir%\scripts ( mkdir %target_dir%\scripts )
+IF NOT EXIST %target_dir%\scripts\udp-driver ( mkdir %target_dir%\scripts\udp-driver )
+IF NOT EXIST %target_dir%\scripts\udp-driver\osi3 ( mkdir %target_dir%\scripts\udp-driver\osi3 )
 IF NOT EXIST %target_dir%\include ( mkdir %target_dir%\include )
 IF NOT EXIST %target_dir%\3rd_party_terms_and_licenses ( mkdir %target_dir%\3rd_party_terms_and_licenses )
 IF NOT EXIST %target_dir%\Hello-World_coding-example ( mkdir %target_dir%\Hello-World_coding-example )
@@ -50,6 +52,8 @@ copy resources\xosc\routing-test.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\drop-bike.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\sumo-test.xosc %target_dir%\resources\xosc /y
 copy resources\xosc\acc-test.xosc %target_dir%\resources\xosc /y
+copy resources\xosc\alks-test.xosc %target_dir%\resources\xosc /y
+copy resources\xosc\swarm.xosc %target_dir%\resources\xosc /y
 
 copy resources\xosc\Catalogs\Maneuvers\*.* %target_dir%\resources\xosc\Catalogs\Maneuvers /y
 copy resources\xosc\Catalogs\Routes\*.* %target_dir%\resources\xosc\Catalogs\Routes /y
@@ -86,6 +90,8 @@ copy resources\models\parking_lot.osgb %target_dir%\resources\models /y
 copy resources\models\curve_r100.osgb %target_dir%\resources\models /y
 copy resources\models\walkman.osgb %target_dir%\resources\models /y
 copy resources\models\cyclist.osgb %target_dir%\resources\models /y
+copy resources\models\mc.osgb %target_dir%\resources\models /y
+copy resources\models\moose_cc0.osgb %target_dir%\resources\models /y
 copy resources\models\multi_intersections.osgb %target_dir%\resources\models /y
 copy resources\models\curves_elevation.osgb %target_dir%\resources\models /y
 copy resources\models\pole.osgb %target_dir%\resources\models /y
@@ -124,6 +130,7 @@ copy run\esmini\run_routing-test.bat %target_dir%\run\esmini /y
 copy run\esmini\run_drop-bike.bat %target_dir%\run\esmini /y
 copy run\esmini\run_sumo-test.bat %target_dir%\run\esmini /y
 copy run\esmini\run_acc-test.bat %target_dir%\run\esmini /y
+copy run\esmini\run_swarm.bat %target_dir%\run\esmini /y
 
 copy run\odrviewer\run_e6mini.bat %target_dir%\run\odrviewer /y
 copy run\odrviewer\run_multi_intersections.bat %target_dir%\run\odrviewer /y
@@ -132,6 +139,8 @@ copy run\replayer\run_and_plot_cut-in_speed.bat %target_dir%\run\replayer /y
 copy run\replayer\run_and_plot_ltap-od_pos.bat %target_dir%\run\replayer /y
 
 copy scripts\plot_csv.py %target_dir%\scripts /y
+copy scripts\udp-driver\* %target_dir%\scripts\udp-driver /y
+copy scripts\udp-driver\osi3\* %target_dir%\scripts\udp-driver\osi3 /y
 
 copy docs\readme.txt %target_dir% /y
 copy docs\commands.txt %target_dir% /y

@@ -2,7 +2,7 @@ import argparse
 import ctypes
 import os
 
-
+VERSION = 1
 REPLAY_FILENAME_SIZE = 512
 NAME_LEN = 32
 
@@ -26,6 +26,7 @@ class ObjectStateStructDat(ctypes.Structure):
         ("width", ctypes.c_float),
         ("length", ctypes.c_float),
         ("height", ctypes.c_float),
+        ("scaleMode", ctypes.c_int),
         # ObjectPositionStruct
         ("x", ctypes.c_float),
         ("y", ctypes.c_float),
@@ -43,6 +44,7 @@ class ObjectStateStructDat(ctypes.Structure):
 
 class DATHeader(ctypes.Structure):
     _fields_ = [
+        ("version", ctypes.c_int),
         ("odr_filename", ctypes.c_char * REPLAY_FILENAME_SIZE),
         ("model_filename", ctypes.c_char * REPLAY_FILENAME_SIZE),
     ]
@@ -57,7 +59,7 @@ def dat2csv(datfile):
     except OSError:
         print("ERROR: Could not open file {} for reading".format(datfile))
         raise
-    buffer = fdat.read(2 * REPLAY_FILENAME_SIZE)
+    buffer = fdat.read(ctypes.sizeof(DATHeader))
 
     csvfile = os.path.splitext(datfile)[0] + ".csv"
     try:
@@ -68,10 +70,18 @@ def dat2csv(datfile):
 
     h = DATHeader.from_buffer_copy(buffer)
     fcsv.write(
-        "OpenDRIVE: {}, 3DModel: {}\n".format(
-            h.odr_filename.decode("utf-8"), h.model_filename.decode("utf-8")
+        "Version: {} OpenDRIVE: {}, 3DModel: {}\n".format(
+            h.version, h.odr_filename.decode("utf-8"), h.model_filename.decode("utf-8")
         )
     )
+
+    if h.version != VERSION:
+        print(
+            "Version mismatch. {} is version {} while supported version is: {}".format(
+                csvfile, h.version, VERSION
+            )
+        )
+        exit(-1)
 
     # Print column headings / value types
     fcsv.write(

@@ -99,7 +99,12 @@ int main(int argc, char* argv[])
 ```
 
 ### External control of Ego
-A silly example showing how you can just take control over vehicle state via the API. The Ego car will move one meter along the Y-axis for each frame...
+A silly example showing how you can just take control over vehicle state via the API. The Ego car will move one meter along the Y-axis for each frame while rotating...
+
+First step is to modify the cut-in_interactive.xosc scenario. Make a copy named "cut-in_external.xosc". In that file, replace "interactiveDriver" controller with "externalController" by changing the line:  
+`<CatalogReference catalogName="ControllerCatalog" entryName="interactiveDriver" />`  
+to:  
+`<CatalogReference catalogName="ControllerCatalog" entryName="externalController" />`
 
 Now we will also introduce the quit_flag, which lets you quit by pressing 'Esc' key.
 ```C++
@@ -113,7 +118,7 @@ int main(int argc, char* argv[])
 
 	for (int i = 0; i < 500 && !(SE_GetQuitFlag() == 1); i++)
 	{
-		SE_ReportObjectPos(0, 0.0f, 8.0f, (float)i, 0.0f, 1.57f, 0.0f, 0.0f, 15.0f);
+		SE_ReportObjectPos(0, 0.0f, 8.0f, (float)i, 0.0f, 1.57 + 0.01*i, 0.0f, 0.0f, 15.0f);
 		SE_Step();
 	}
 
@@ -177,6 +182,9 @@ int main(int argc, char* argv[])
 	SE_AddObjectSensor(0, 2.0, 1.0, 0.5, 1.57, 1.0, 50.0, 1.57, MAX_HITS);
 	SE_AddObjectSensor(0, -1.0, 0.0, 0.5, 3.14, 0.5, 20.0, 1.57, MAX_HITS);
 
+	// Turn on visualization of object sensors, toggle key 'r'
+	SE_ViewerShowFeature(1, true);
+
 	for (int i = 0; i < 2000 && !(SE_GetQuitFlag() == 1); i++)
 	{
 		SE_Step();
@@ -205,9 +213,9 @@ Note: If you want M_PI, add on top (before includes): #define _USE_MATH_DEFINES
 
 ### Driver model
 
-Using a simple vehicle model this example demonstrates how a driver model can interact with the scenario, once again using the ```ExternalController```. 
+Using a simple vehicle model this example demonstrates how a driver model can interact with the scenario, once again using the ```ExternalController```. This example is a slightly simplified version of the [test-driver](https://github.com/esmini/esmini/tree/master/EnvironmentSimulator/code-examples/test-driver) code example.
 
-Before heading into the application code we will prepare a scenario. Download [test-driver.xosc](https://www.dropbox.com/s/h9uqj2la4sk2t2o/test-driver.xosc?dl=1) and put it in esmini/resources/xosc folder.
+Before heading into the application code we will look into the scenario file ([test-driver.xosc](https://github.com/esmini/esmini/tree/master/EnvironmentSimulator/code-examples/test-driver/test-driver.xosc)).
 
 Now let's have a look inside it to see how to activate the ExternalController, which will prevent the DefaultController to interfere with the Ego vehicle and instead hand over exclusive control to our application. You can skip this and go to the C++ code example below if you're not interested in the controller setup.
 - Open test-driver.xosc 
@@ -217,12 +225,13 @@ Now let's have a look inside it to see how to activate the ExternalController, w
         <Controller name="MyExternalControllerWithGhost">
             <Properties>
         	    <Property name="esminiController" value="ExternalController" />
-                <Property name="useGhost" value="false" />
+                <Property name="useGhost" value="$GhostMode" />
                 <Property name="headstartTime" value="2" />
             </Properties>
         </Controller>
     </ObjectController>   
 	```
+  Note: The GhostMode parameter is set to true or false in the ParameterDeclarations section in the top of the scenario file. 
 - Then the initial position is set. This could instead be done by the application, but it's convenient to specify it in the scenario file.
 	```
    <PrivateAction>
@@ -262,7 +271,7 @@ int main(int argc, char* argv[])
 	float simTime = 0;
 	float dt = 0;
 
-	if (SE_Init("../resources/xosc/test-driver.xosc", 0, 1, 0, 0) != 0)
+	if (SE_Init("../EnvironmentSimulator/code-examples/test-driver/test-driver.xosc", 0, 1, 0, 0) != 0)
 	{
 		printf("Failed to initialize the scenario, quit\n");
 		return -1;
@@ -274,7 +283,7 @@ int main(int argc, char* argv[])
 
 	// Initialize the vehicle model, fetch initial state from the scenario
 	SE_GetObjectState(0, &objectState);
-	vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0);
+	vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
 
 	// show some road features, including road sensor 
 	SE_ViewerShowFeature(4, true);
@@ -341,8 +350,8 @@ To test this you need to make two changes to the previous example:
 ```#define GHOST 0``` to  
 ```#define GHOST 1```
 2. In test-driver.xosc, change line:  
-```<Property name="useGhost" value="false" />``` to   
-```<Property name="useGhost" value="true" />```
+```<ParameterDeclaration name="GhostMode" parameterType="bool" value="false"/>``` to   
+```<ParameterDeclaration name="GhostMode" parameterType="bool" value="true"/>```
 
 When running the application, press key 'j' to show dots along Ego and Ghost trails.
 

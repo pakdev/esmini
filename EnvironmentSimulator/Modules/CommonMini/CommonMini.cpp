@@ -13,6 +13,19 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <iostream>
+#include <random>
+
+// UDP network includes
+#ifdef _WIN32
+#include <winsock2.h>
+#include <Ws2tcpip.h>
+#else
+ /* Assume that any non-Windows platform uses POSIX-style sockets instead. */
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>  /* Needed for getaddrinfo() and freeaddrinfo() */
+#include <unistd.h> /* Needed for close() */
+#endif
 
 #include "CommonMini.hpp"
 
@@ -46,6 +59,24 @@ const char* esmini_git_branch(void)
 const char* esmini_build_version(void)
 {
 	return ESMINI_BUILD_VERSION;
+}
+
+std::string ControlDomain2Str(ControlDomains domains)
+{
+	if (domains == ControlDomains::DOMAIN_BOTH)
+	{
+		return "lateral and longitudinal";
+	}
+	else if (domains == ControlDomains::DOMAIN_LAT)
+	{
+		return "lateral";
+	}
+	else if (domains == ControlDomains::DOMAIN_LONG)
+	{
+		return "longitudinal";
+	}
+
+	return "none";
 }
 
 bool FileExists(const char* fileName)
@@ -167,6 +198,22 @@ double GetAngleInInterval2PI(double angle)
 	return angle2;
 }
 
+double GetAngleInIntervalMinusPIPlusPI(double angle)
+{
+	double angle2 = fmod(angle, 2 * M_PI);
+
+	if (angle2 < -M_PI)
+	{
+		angle2 += 2 * M_PI;
+	}
+	else if (angle2 > M_PI)
+	{
+		angle2 -= 2 * M_PI;
+	}
+
+	return angle2;
+}
+
 int GetIntersectionOfTwoLineSegments(double ax1, double ay1, double ax2, double ay2, double bx1, double by1, double bx2, double by2, double &x3, double &y3)
 {
 	// Inspiration: https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
@@ -270,6 +317,17 @@ double DistanceFromPointToEdge2D(double x3, double y3, double x1, double y1, dou
 	return distance;
 }
 
+double DistanceFromPointToLine2D(double x3, double y3, double x1, double y1, double x2, double y2, double* x, double* y)
+{
+	double distance = 0;
+
+	// project point on edge, and measure distance to that point
+	ProjectPointOnVector2D(x3, y3, x1, y1, x2, y2, *x, *y);
+	distance = PointDistance2D(x3, y3, *x, *y);
+
+	return distance;
+}
+
 int PointSideOfVec(double px, double py, double vx1, double vy1, double vx2, double vy2)
 {
 	// Use cross product
@@ -293,6 +351,11 @@ double PointToLineDistance2DSigned(double px, double py, double lx0, double ly0,
 double PointSquareDistance2D(double x0, double y0, double x1, double y1)
 {
 	return (x1 - x0)*(x1 - x0) + (y1 - y0) * (y1 - y0);
+}
+
+double PointHeadingDistance2D(double x0, double y0, double h, double x1, double y1)
+{
+	return (x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0);
 }
 
 void ProjectPointOnVector2D(double x, double y, double vx1, double vy1, double vx2, double vy2, double &px, double &py)
@@ -341,6 +404,17 @@ void Global2LocalCoordinates(double xTargetGlobal, double yTargetGlobal,
 	double relativeY = yTargetGlobal - yHostGlobal;
 	targetXforHost = relativeX * cos(angleHost) - relativeY * sin(angleHost);
 	targetYforHost = relativeX * sin(angleHost) + relativeY * cos(angleHost);
+}
+
+void Local2GlobalCoordinates(double &xTargetGlobal, double &yTargetGlobal,
+							 double xHostGlobal, double yHostGlobal, double thetaGlobal,
+							 double targetXforHost, double targetYforHost)
+{
+  xTargetGlobal = targetXforHost * cos(-thetaGlobal) + targetYforHost *
+    sin(-thetaGlobal) + xHostGlobal;
+
+  yTargetGlobal = targetYforHost * cos(-thetaGlobal) - targetXforHost *
+    sin(-thetaGlobal) + yHostGlobal;
 }
 
 void SwapByteOrder(unsigned char *buf, int data_type_size, int buf_size)
@@ -631,6 +705,12 @@ void R0R12EulerAngles(double h0, double p0, double r0, double h1, double p1, dou
 	r = GetAngleInInterval2PI(atan2(R2[2][1], R2[2][2]));
 }
 
+SE_Env::SE_Env() : osiMaxLongitudinalDistance_(OSI_MAX_LONGITUDINAL_DISTANCE), osiMaxLateralDeviation_(OSI_MAX_LATERAL_DEVIATION), logFilePath_(LOG_FILENAME)
+{
+	seed_ = (std::random_device())();
+	gen_.seed(seed_);
+}
+
 int SE_Env::AddPath(std::string path)
 {
 	// Check if path already in list
@@ -835,8 +915,8 @@ CSV_Logger::CSV_Logger(std::string scenario_filename, int numvehicles, std::stri
 	const char* egoHeader = "Index [-] , TimeStamp [sec] , #1 Entitity_Name [-] , "
 		"#1 Entitity_ID [-] , #1 Current_Speed [m/sec] , #1 Wheel_Angle [deg] , "
 		"#1 Wheel_Rotation [-] , #1 World_Position_X [-] , #1 World_Position_Y [-] , "
-		"#1 World_Position_Z [-] , #1 Acc_X [-] , #1 Acc_Y [-] , "
-		"#1 Acc_Z [-] , #1 Distance_Travelled_Along_Road_Segment [m] , "
+		"#1 World_Position_Z [-] , #1 Vel_X [-] , #1 Vel_Y [-] , #1 Vel_Z [-] , "
+		"#1 Acc_X [-] , #1 Acc_Y [-] , #1 Acc_Z [-] , #1 Distance_Travelled_Along_Road_Segment [m] , "
 		"#1 Lateral_Distance_Lanem [m] , #1 World_Heading_Angle [rad] , #1 Heading_Angle_Rate [rad/s] , "
 		"#1 Relative_Heading_Angle [rad] , #1 Relative_Heading_Angle_Drive_Direction [rad] , "
 		"#1 World_Pitch_Angle [rad] , #1 Road_Curvature [1/m] , ";
@@ -847,14 +927,14 @@ CSV_Logger::CSV_Logger(std::string scenario_filename, int numvehicles, std::stri
 	const char* npcHeader = "#%d Entitity_Name [-] , #%d Entitity_ID [-] , "
 		"#%d Current_Speed [m/sec] , #%d Wheel_Angle [deg] , #%d Wheel_Rotation [-] , "
 		"#%d World_Position_X [-] , #%d World_Position_Y [-] , #%d World_Position_Z [-] , "
-		"#%d Acc_X[-] , #%d Acc_Y[-] , #%d Acc_Z [-] , "
+		"#%d Vel_X[-] , #%d Vel_Y[-] , #%d Vel_Z[-] , #%d Acc_X [-] , #%d Acc_Y[-] , #%d Acc_Z [-] , "
 		"#%d Distance_Travelled_Along_Road_Segment [m] , #%d Lateral_Distance_Lanem [m] , "
 		"#%d World_Heading_Angle [rad] , #%d Heading_Angle_Rate [rad/s] , #%d Relative_Heading_Angle [rad] , "
 		"#%d Relative_Heading_Angle_Drive_Direction [rad] , #%d World_Pitch_Angle [rad] , "
 		"#%d Road_Curvature [1/m] , ";
 	for (int i = 2; i <= numvehicles; i++)
 	{
-		snprintf(message, 1024, npcHeader, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i);
+		snprintf(message, 1024, npcHeader, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i);
 		file_ << message;
 	}
 	file_ << std::endl;
@@ -874,27 +954,27 @@ CSV_Logger::~CSV_Logger()
 	callback_ = 0;
 }
 
-void CSV_Logger::LogVehicleData(bool isendline, double timestamp, char const* name_, int id_, double speed_,
-	double wheel_angle_, double wheel_rot_, double posX_, double posY_, double posZ_, double accX_, double accY_,
-	double accZ_, double distance_road_, double distance_lanem_, double heading_, double heading_rate_,
-	double heading_angle_, double heading_angle_driving_direction_, double pitch_, double curvature_, ...)
+void CSV_Logger::LogVehicleData(bool isendline, double timestamp, char const* name, int id, double speed,
+	double wheel_angle, double wheel_rot, double posX, double posY, double posZ, double velX, double velY,
+	double velZ, double accX, double accY, double accZ, double distance_road, double distance_lanem, double heading,
+	double heading_rate, double heading_angle, double heading_angle_driving_direction, double pitch, double curvature, ...)
 {
 	static char data_entry[2048];
 
 	//If this data is for Ego (position 0 in the Entities vector) print using the first format
 	//Otherwise use the second format
-	if (id_ == 0)
+	if (id == 0)
 		snprintf(data_entry, 2048,
-			"%d, %f, %s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, ",
-			data_index_, timestamp, name_, id_, speed_, wheel_angle_, wheel_rot_, posX_, posY_, posZ_, accX_,
-			accY_, accZ_, distance_road_, distance_lanem_, heading_, heading_rate_, heading_angle_,
-			heading_angle_driving_direction_, pitch_, curvature_);
+			"%d, %f, %s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, ",
+			data_index_, timestamp, name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX,
+			velY, velZ, accX, accY, accZ, distance_road, distance_lanem, heading, heading_rate,
+			heading_angle, heading_angle_driving_direction, pitch, curvature);
 	else
 		snprintf(data_entry, 2048,
-			"%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f",
-			name_, id_, speed_, wheel_angle_, wheel_rot_, posX_, posY_, posZ_, accX_, accY_, accZ_, distance_road_,
-			distance_lanem_, heading_, heading_rate_, heading_angle_, heading_angle_driving_direction_, pitch_,
-			curvature_);
+			"%s, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f",
+			name, id, speed, wheel_angle, wheel_rot, posX, posY, posZ, velX, velY, velZ, accX, accY, accZ,
+			distance_road, distance_lanem, heading, heading_rate, heading_angle, heading_angle_driving_direction,
+			pitch, curvature);
 
 	//Add lines horizontally until the endline is reached
 	if (isendline == false)
@@ -1077,17 +1157,18 @@ bool SE_Options::IsOptionArgumentSet(std::string opt)
 	return GetOption(opt)->set_;
 }
 
-std::string SE_Options::GetOptionArg(std::string opt)
+std::string SE_Options::GetOptionArg(std::string opt, int index)
 {
 	SE_Option *option = GetOption(opt);
 
-	if (option && !(option->opt_arg_.empty()))
+	if (option == nullptr)
 	{
-		return option->arg_value_;
+		return "";
 	}
-	else if (option && !(option->default_value_.empty()))
+
+	if (!(option->opt_arg_.empty()) && index < option->arg_value_.size())
 	{
-		return option->default_value_;
+		return option->arg_value_[index];
 	}
 	else
 	{
@@ -1107,9 +1188,10 @@ static void ShiftArgs(int *argc, char** argv, int start_i)
 	}
 }
 
-void SE_Options::ParseArgs(int *argc, char* argv[])
+int SE_Options::ParseArgs(int *argc, char* argv[])
 {
 	app_name_ = FileNameWithoutExtOf(argv[0]);
+	int returnVal = 0;
 
 	for (size_t i = 0; i < *argc; i++)
 	{
@@ -1135,17 +1217,18 @@ void SE_Options::ParseArgs(int *argc, char* argv[])
 			{
 				if (i < *argc - 1 && strncmp(argv[i + 1], "--", 2))
 				{
-					option->arg_value_ = argv[i+1];
+					option->arg_value_.push_back(argv[i+1]);
 					ShiftArgs(argc, argv, (int)i);
 				}
 				else if (!option->default_value_.empty())
 				{
-					option->arg_value_ = option->default_value_;
+					option->arg_value_.push_back(option->default_value_);
 				}
 				else
 				{
 					LOG("Argument parser error: Missing option %s argument", option->opt_str_.c_str());
 					option->set_ = false;
+					returnVal = -1;
 				}
 			}
 			ShiftArgs(argc, argv, (int)i);
@@ -1155,6 +1238,8 @@ void SE_Options::ParseArgs(int *argc, char* argv[])
 			i++;
 		}
 	}
+
+	return returnVal;
 }
 
 SE_Option* SE_Options::GetOption(std::string opt)

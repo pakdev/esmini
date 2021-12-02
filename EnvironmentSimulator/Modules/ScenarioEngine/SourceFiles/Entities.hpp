@@ -82,13 +82,23 @@ namespace scenarioengine
 			double value; // Depends on action, see SE_OverrideActionList
 		} OverrideActionStatus;
 
+
+		typedef struct
+		{
+			double maxAcceleration;
+			double maxDeceleration;
+			double maxSpeed;
+		} Performance;
+
 		// Allocate vector for all possible override status
 		OverrideActionStatus overrideActionList[OVERRIDE_NR_TYPES];
 
 		Type type_;
 		int category_; // specific object category in vehicle, pedestrian or misobject
 		std::string name_;
+		std::string model3d_;
 		int id_;
+		EntityScaleMode scaleMode_;
 
 		// Ghost following stuff
 		int trail_follow_index_; // Index of closest segment
@@ -96,14 +106,14 @@ namespace scenarioengine
 		roadmanager::TrajVertex trail_closest_pos_;
 
 		double sensor_pos_[3];
-		Object *ghost_;
+		Object* ghost_;
+		Object* ghost_Ego_;
 
 		double speed_;
 		double wheel_angle_;
 		double wheel_rot_;
 		roadmanager::Position pos_;
 		roadmanager::Route *route_;
-		std::string model_filepath_;
 		int model_id_;
 		roadmanager::PolyLineBase trail_;
 		double odometer_;
@@ -115,6 +125,7 @@ namespace scenarioengine
 		int visibilityMask_;
 		roadmanager::Junction::JunctionStrategyType junctionSelectorStrategy_;
 		double nextJunctionSelectorAngle_;  // number between 0:2pi (circle). E.g. if 1.57 choose the leftmost road
+		Performance performance_;
 
 		int dirty_;
 		bool reset_;			 // indicate discreet movement, teleporting, no odometer update
@@ -146,6 +157,14 @@ namespace scenarioengine
 		bool IsStandStill() { return stand_still_timestamp_ > SMALL_NUMBER; }
 
 		/**
+			Move current position along the road or route (if assigned)
+			@param ds Distance to move, negative will move backwards
+			@param actualDistance if true ds will adjusted for curvature and lat offset
+			@return Non zero return value indicates error of some kind
+		*/
+		int MoveAlongS(double ds, bool actualDistance = true);
+
+		/**
 		    Returns the timestamp from which the entity has not moved.
 			@return The timestamp in seconds.
 		*/
@@ -157,7 +176,9 @@ namespace scenarioengine
 			@param target The object to check
 			@return true if bounding boxes overlap else false
 		*/
-		bool Collision(Object *target);
+		bool CollisionAndRelativeDistLatLong(Object* target, double* distLat, double* distLong);
+
+		bool Collision(Object* target) { return CollisionAndRelativeDistLatLong(target, nullptr, nullptr); }
 
 		/**
 			Check if point is colliding/overlapping with specified target object
@@ -226,9 +247,9 @@ namespace scenarioengine
 		}
 		int GetAssignedControllerType();
 		int GetActivatedControllerType();
-		bool IsControllerActiveOnDomains(int domainMask);
-		bool IsControllerActiveOnAnyOfDomains(int domainMask);
-		bool IsControllerActive() { return IsControllerActiveOnAnyOfDomains(0xff); }
+		bool IsControllerActiveOnDomains(ControlDomains domainMask);
+		bool IsControllerActiveOnAnyOfDomains(ControlDomains domainMask);
+		bool IsControllerActive();
 		int GetControllerMode();
 		int GetId() { return id_; }
 		void SetHeadstartTime(double headstartTime) { headstart_time_ = headstartTime; }
@@ -241,6 +262,13 @@ namespace scenarioengine
 		void SetAcc(double x_acc, double y_acc, double z_acc);
 		void SetAngularVel(double h_vel, double p_vel, double r_vel);
 		void SetAngularAcc(double h_acc, double p_acc, double r_acc);
+
+		void SetMaxAcceleration(double maxAcceleration) { performance_.maxAcceleration = maxAcceleration; }
+		double GetMaxAcceleration() { return performance_.maxAcceleration; }
+		void SetMaxDeceleration(double maxDeceleration) { performance_.maxDeceleration = maxDeceleration; }
+		double GetMaxDeceleration() { return performance_.maxDeceleration; }
+		void SetMaxSpeed(double maxSpeed) { performance_.maxSpeed = maxSpeed; }
+		double GetMaxSpeed() { return performance_.maxSpeed; }
 
 		/**
 		Specify strategy how to choose way in next junction
@@ -289,6 +317,11 @@ namespace scenarioengine
 		{
 			dirty_ &= ~bits;
 		}
+
+		void ClearDirtyBits()
+		{
+			dirty_ = 0;
+		}
 	};
 
 	class Vehicle : public Object
@@ -310,6 +343,9 @@ namespace scenarioengine
 		Vehicle() : Object(Object::Type::VEHICLE)
 		{
 			category_ = static_cast<int>(Category::CAR);
+			performance_.maxAcceleration = 10.0;
+			performance_.maxDeceleration= 10.0;
+			performance_.maxSpeed = 100.0;
 		}
 
 		void SetCategory(std::string category)
@@ -329,6 +365,10 @@ namespace scenarioengine
 			else if (category == "bicycle")
 			{
 				category_ = static_cast<int>(Vehicle::Category::BICYCLE);
+			}
+			else if (category == "motorbike")
+			{
+				category_ = static_cast<int>(Vehicle::Category::MOTORBIKE);
 			}
 			else
 			{
@@ -359,6 +399,9 @@ namespace scenarioengine
 					   model_(""), mass_(0.0), name_("")
 		{
 			category_ = static_cast<int>(Category::PEDESTRIAN);
+			performance_.maxAcceleration = 10.0;
+			performance_.maxDeceleration = 10.0;
+			performance_.maxSpeed = 10.0;
 		}
 
 		void SetCategory(std::string category)
@@ -415,6 +458,9 @@ namespace scenarioengine
 		MiscObject() : Object(Object::Type::MISC_OBJECT), model_(""), mass_(0.0), name_("")
 		{
 			category_ = static_cast<int>(category_);
+			performance_.maxAcceleration = 0.0;
+			performance_.maxDeceleration = 0.0;
+			performance_.maxSpeed = 0.0;
 		}
 
 		void SetCategory(std::string category)
@@ -499,7 +545,7 @@ namespace scenarioengine
 	class Entities
 	{
 	public:
-		Entities(){};
+		Entities() : nextId_(0) {}
 
 		std::vector<Object *> object_;
 
@@ -512,6 +558,9 @@ namespace scenarioengine
 		bool nameExists(std::string name);
 		Object *GetObjectByName(std::string name);
 		Object *GetObjectById(int id);
+
+	private:
+		int nextId_;  // Is incremented for each new object created
 	};
 
 }

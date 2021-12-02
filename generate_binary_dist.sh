@@ -32,6 +32,8 @@ resources/xosc/routing-test.xosc \
 resources/xosc/drop-bike.xosc \
 resources/xosc/sumo-test.xosc \
 resources/xosc/acc-test.xosc \
+resources/xosc/alks-test.xosc \
+resources/xosc/swarm.xosc \
 resources/xosc/Catalogs/Maneuvers/*.* \
 resources/xosc/Catalogs/Routes/*.* \
 resources/xosc/Catalogs/Vehicles/*.* \
@@ -65,6 +67,8 @@ resources/models/parking_lot.osgb \
 resources/models/curve_r100.osgb \
 resources/models/walkman.osgb \
 resources/models/cyclist.osgb \
+resources/models/mc.osgb \
+resources/models/moose_cc0.osgb \
 resources/models/multi_intersections.osgb \
 resources/models/curves_elevation.osgb \
 resources/models/Swe*.osgb \
@@ -100,11 +104,14 @@ run/esmini/run_routing-test.* \
 run/esmini/run_drop-bike.* \
 run/esmini/run_sumo-test.* \
 run/esmini/run_acc-test.* \
+run/esmini/run_swarm.* \
 run/odrviewer/run_e6mini*.* \
 run/odrviewer/run_multi_intersections*.* \
 run/replayer/run_and_plot_cut-in_speed*.* \
 run/replayer/run_and_plot_ltap-od_pos*.* \
 scripts/plot_csv.py \
+scripts/udp-driver/*.* \
+scripts/udp-driver/osi3/*.* \
 docs/readme.txt \
 docs/commands.txt \
 3rd_party_terms_and_licenses/* \

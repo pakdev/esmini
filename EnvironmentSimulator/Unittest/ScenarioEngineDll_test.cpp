@@ -22,7 +22,6 @@ class GetNumberOfObjectsTest : public ::testing::TestWithParam<std::tuple<std::s
 
 TEST_P(GetNumberOfObjectsTest, number_of_objects)
 {
-
 	std::string scenario_file = std::get<0>(GetParam());
 	//std::string scenario_file = "../../esmini/resources/xosc/cut-in.xosc";
 
@@ -40,10 +39,9 @@ INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetNumberOfObjectsTest, ::testing::Valu
 
 TEST(GetNumberOfObjectsTest, number_of_objects_no_init)
 {
-
 	int n_Objects = SE_GetNumberOfObjects();
 
-	EXPECT_EQ(n_Objects, 0);
+	EXPECT_EQ(n_Objects, -1);
 }
 
 // OSI tests
@@ -63,13 +61,13 @@ TEST(GetOSILaneBoundaryIdsTest, lane_boundary_ids)
 	SE_StepDT(0.001f);
 	SE_UpdateOSIGroundTruth();
 
-	std::vector<std::vector<int>> lane_bound = {{10, 9, 8, -1},
-												{0, 10, 9, 8},
-												{1, 0, 10, 9},
-												{2, 1, 0, 10},
-												{3, 2, 1, 0},
-												{11, 3, 2, 1},
-												{4, 11, 3, 2},
+	std::vector<std::vector<int>> lane_bound = {{-1, 8, 9, 10},
+												{8, 9, 10, 0},
+												{9, 10, 0, 1},
+												{10, 0, 1, 2},
+												{0, 1, 2, 3},
+												{1, 2, 3, 11},
+												{2, 3, 11, 4},
 												{3, 11, 4, 5}, //right side start
 												{11, 4, 5, 6},
 												{4, 5, 6, 7},
@@ -323,13 +321,13 @@ TEST(GetOSIRoadLaneTest, left_lane_id)
 	{
 		const char *road_lane = SE_GetOSIRoadLane(&road_lane_size, veh_id[i]);
 		osi_lane.ParseFromArray(road_lane, road_lane_size);
-		if (lanes[i] < 6)
+		if (lanes[i] == 0)
 		{
-			EXPECT_EQ(osi_lane.classification().left_adjacent_lane_id(0).value(), lanes[i + 1]);
+			EXPECT_EQ(osi_lane.classification().left_adjacent_lane_id_size(), 0);
 		}
-		else if (lanes[i] == 6)
+		else if (lanes[i] <= 6)
 		{
-			EXPECT_EQ(osi_lane.classification().left_adjacent_lane_id(0).value(), 8);
+			EXPECT_EQ(osi_lane.classification().left_adjacent_lane_id(0).value(), lanes[i - 1]);
 		}
 		else if (lanes[i] == 8)
 		{
@@ -365,17 +363,17 @@ TEST(GetOSIRoadLaneTest, right_lane_id)
 		const char *road_lane = SE_GetOSIRoadLane(&road_lane_size, veh_id[i]);
 		osi_lane.ParseFromArray(road_lane, road_lane_size);
 
-		if (lanes[i] == 0)
+		if (lanes[i] == 14)
 		{
 			EXPECT_EQ(osi_lane.classification().right_adjacent_lane_id_size(), 0);
 		}
-		else if (lanes[i] == 14)
+		else if (lanes[i] < 6)
 		{
-			EXPECT_EQ(osi_lane.classification().right_adjacent_lane_id_size(), 0);
+			EXPECT_EQ(osi_lane.classification().right_adjacent_lane_id(0).value(), lanes[i + 1]);
 		}
-		else if (lanes[i] < 7)
+		else if (lanes[i] == 6)
 		{
-			EXPECT_EQ(osi_lane.classification().right_adjacent_lane_id(0).value(), lanes[i - 1]);
+			EXPECT_EQ(osi_lane.classification().right_adjacent_lane_id(0).value(), 8);
 		}
 		else
 		{
@@ -399,15 +397,15 @@ TEST(GetOSIRoadLaneTest, right_lane_boundary_id)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lane_bound = {8, 9, 10, 0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14};
+	std::vector<int> lane_bound = {8, 9, 10, 0, 1, 2, 3, 11, 4, 5, 6, 7, 12, 13, 14};
 	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
 
-	for (int i = 0; i < lane_bound.size(); i++)
+	for (int i = 0; i < lane_bound.size() - 1; i++)
 	{
 		const char *road_lane = SE_GetOSIRoadLane(&road_lane_size, veh_id[i]);
 		osi_lane.ParseFromArray(road_lane, road_lane_size);
 
-		EXPECT_EQ(osi_lane.classification().right_lane_boundary_id(0).value(), lane_bound[i]);
+		EXPECT_EQ(osi_lane.classification().right_lane_boundary_id(0).value(), lane_bound[i + 1]);
 	}
 
 	SE_Close();
@@ -426,7 +424,7 @@ TEST(GetOSIRoadLaneTest, left_lane_boundary_id)
 	osi3::Lane osi_lane;
 
 	// explicitly writing lanes ID so that it will be easy to adapt the test for more complex roads in the future
-	std::vector<int> lane_bound = {8, 9, 10, 0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14};
+	std::vector<int> lane_bound = {8, 9, 10, 0, 1, 2, 3, 11, 4, 5, 6, 7, 12, 13, 14};
 	std::vector<int> veh_id = {14, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0};
 
 	for (int i = 0; i < veh_id.size(); i++)
@@ -434,18 +432,7 @@ TEST(GetOSIRoadLaneTest, left_lane_boundary_id)
 		const char *road_lane = SE_GetOSIRoadLane(&road_lane_size, veh_id[i]);
 		osi_lane.ParseFromArray(road_lane, road_lane_size);
 
-		if (veh_id[i] == 6 || veh_id[i] == 8)
-		{
-			EXPECT_EQ(osi_lane.classification().left_lane_boundary_id(0).value(), 11);
-		}
-		else if (veh_id[i] > 7)
-		{
-			EXPECT_EQ(osi_lane.classification().left_lane_boundary_id(0).value(), lane_bound[i + 1]);
-		}
-		else
-		{
-			EXPECT_EQ(osi_lane.classification().left_lane_boundary_id(0).value(), lane_bound[i - 1]);
-		}
+		EXPECT_EQ(osi_lane.classification().left_lane_boundary_id(0).value(), lane_bound[i]);
 	}
 
 	SE_Close();
@@ -678,7 +665,7 @@ typedef struct
 	float centerOffsetZ;
 } bounding_box;
 
-class GetGroundTruthTests : public ::testing::TestWithParam<std::tuple<std::string, int, int, bounding_box>>
+class GetGroundTruthTests : public ::testing::TestWithParam<std::tuple<std::string, int, int, bounding_box, std::string>>
 {
 };
 // inp: nto excisting lane boundary global id
@@ -715,6 +702,7 @@ TEST_P(GetGroundTruthTests, receive_GroundTruth)
 	float ego_xoffset = (float)osi_gt.mutable_moving_object(ego_index)->mutable_vehicle_attributes()->mutable_bbcenter_to_rear()->x();
 	float ego_yoffset = (float)osi_gt.mutable_moving_object(ego_index)->mutable_vehicle_attributes()->mutable_bbcenter_to_rear()->y();
 	float ego_zoffset = (float)osi_gt.mutable_moving_object(ego_index)->mutable_vehicle_attributes()->mutable_bbcenter_to_rear()->z();
+	std::string map_reference = osi_gt.map_reference();
 
 	EXPECT_EQ(n_lanes, std::get<1>(GetParam()));
 	EXPECT_EQ(n_objects, std::get<2>(GetParam()));
@@ -724,9 +712,10 @@ TEST_P(GetGroundTruthTests, receive_GroundTruth)
 	EXPECT_EQ(ego_xoffset, std::get<3>(GetParam()).centerOffsetX);
 	EXPECT_EQ(ego_yoffset, std::get<3>(GetParam()).centerOffsetY);
 	EXPECT_EQ(ego_zoffset, std::get<3>(GetParam()).centerOffsetZ);
+	EXPECT_EQ(map_reference, std::get<4>(GetParam()));
 }
 
-INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetGroundTruthTests, ::testing::Values(std::make_tuple("../../../resources/xosc/cut-in.xosc", 14, 2, bounding_box{5.0f, 2.0f, 1.8f, 1.4f, 0.0f, 0.9f}), std::make_tuple("../../../resources/xosc/straight_500m.xosc", 6, 2, bounding_box{5.0f, 2.0f, 1.8f, 1.4f, 0.0f, 0.9f}), std::make_tuple("../../../resources/xosc/highway_merge.xosc", 33, 6, bounding_box{5.0f, 2.0f, 1.8f, 1.4f, 0.0f, 0.9f})));
+INSTANTIATE_TEST_SUITE_P(EsminiAPITests, GetGroundTruthTests, ::testing::Values(std::make_tuple("../../../resources/xosc/cut-in.xosc", 14, 2, bounding_box{5.04f, 2.0f, 1.5f, 1.4f, 0.0f, 0.75f}, "+proj=utm +lat_0=37.3542934123933 +lon_0=-122.0859797650754"), std::make_tuple("../../../resources/xosc/straight_500m.xosc", 6, 2, bounding_box{5.0f, 2.0f, 1.8f, 1.4f, 0.0f, 0.9f}, "+proj=utm +lat_0=37.3542934123933 +lon_0=-122.0859797650754"), std::make_tuple("../../../resources/xosc/highway_merge.xosc", 33, 6, bounding_box{5.04f, 2.0f, 1.5f, 1.4f, 0.0f, 0.75f}, "+proj=utm +lat_0=37.3542934123933 +lon_0=-122.0859797650754")));
 // scenario_file_name, number_of_lanes, number_of_objects, ego_bounding_box
 
 TEST(GetGroundTruthTests, receive_GroundTruth_no_init)
@@ -786,9 +775,10 @@ TEST(GetMiscObjFromGroundTruth, receive_miscobj)
 	EXPECT_EQ(miscobj_y, 10);
 	EXPECT_EQ(miscobj_z, 0.0); // adjusted to the road z
 
-	EXPECT_EQ(miscobj_roll, 5.0);  // Aligned to the road (so if road roll is 1.0 total roll will be 6.0)
-	EXPECT_EQ(miscobj_pitch, 5.0); // Aligned to the road (so if road pitch is 1.0 total pitch will be 6.0)
-	EXPECT_EQ(miscobj_yaw, 5.0);
+	// Angles in OSI should be in range [-PI, PI]
+	EXPECT_EQ(miscobj_roll, 5.0 - 2 * M_PI);  // Aligned to the road (so if road roll is 1.0 total roll will be 6.0)
+	EXPECT_EQ(miscobj_pitch, 5.0 - 2 * M_PI); // Aligned to the road (so if road pitch is 1.0 total pitch will be 6.0)
+	EXPECT_EQ(miscobj_yaw, 5.0 - 2 * M_PI);
 }
 
 TEST(SetOSITimestampTest, TestGetAndSet)
@@ -925,14 +915,33 @@ TEST(ReportObjectVel, TestGetAndSet)
 TEST(ParameterTest, GetTypedParameterValues)
 {
 	std::string scenario_file = "../../../resources/xosc/lane_change.xosc";
-	const char *Scenario_file = scenario_file.c_str();
-	SE_Init(Scenario_file, 0, 0, 0, 0);
+	SE_Init(scenario_file.c_str(), 0, 0, 0, 0);
 
 	bool boolVar;
 	int retVal;
 	retVal = SE_GetParameterBool("DummyParameter2", &boolVar);
 	EXPECT_EQ(retVal, 0);
 	EXPECT_EQ(boolVar, true);
+
+	// Use common SE_Parameter class
+	SE_Parameter param;
+	param.name = "DummyParameter2";
+	bool value = false;
+	param.value = (void*)&value;
+	retVal = SE_GetParameter(&param);
+	EXPECT_EQ(retVal, 0);
+	value = *(bool*)(param.value);
+	EXPECT_EQ(value, true);
+
+	value = false;
+	retVal = SE_SetParameter(param);
+	EXPECT_EQ(retVal, 0);
+
+	value = true;
+	retVal = SE_GetParameter(&param);
+	EXPECT_EQ(retVal, 0);
+	value = *(bool*)(param.value);
+	EXPECT_EQ(value, false);
 
 	// Unavailable
 	retVal = SE_GetParameterBool("DoesNotExist", &boolVar);
@@ -968,6 +977,51 @@ TEST(ParameterTest, GetTypedParameterValues)
 	EXPECT_EQ(retVal, -1);
 
 	SE_Close();
+}
+
+static void paramDeclCallback(void*)
+{
+	static int counter = 0;
+	double value[2] = { 1.1, 1.5 };
+
+	if (counter < 2)
+	{
+		SE_SetParameterDouble("TargetSpeedFactor", value[counter]);
+	}
+
+	counter++;
+}
+
+TEST(ParameterTest, SetParameterValuesBeforeInit)
+{
+	double positions[3][2] = {
+		{5.37060, 189.98206},  // TargetSpeedFactor = 1.1
+		{9.11573, 243.11101},  // TargetSpeedFactor = 1.5
+		{5.49925, 204.98148}  // TargetSpeedFactor = Default = 1.2
+	};
+	SE_ScenarioObjectState state;
+
+	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+
+	SE_RegisterParameterDeclarationCallback(paramDeclCallback, 0);
+
+	for (int i = 0; i < 3 && SE_GetQuitFlag() != 1; i++)
+	{
+		ASSERT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+		ASSERT_EQ(SE_GetNumberOfObjects(), 2);
+
+		while (SE_GetSimulationTime() < 5.0 && SE_GetQuitFlag() != 1)
+		{
+			SE_StepDT(0.1f);
+		}
+
+		// Check position of second vehicle
+		SE_GetObjectState(1, &state);
+		EXPECT_NEAR(state.x, positions[i][0], 1e-5);
+		EXPECT_NEAR(state.y, positions[i][1], 1e-5);
+
+		SE_Close();
+	}
 }
 
 TEST(OverrideActionTest, TestGetAndSet)
@@ -1116,13 +1170,13 @@ TEST(OSILaneParing, multi_roads)
 	osi_gt.ParseFromArray(gt, sv_size);
 
 	// order: lane, predecessor, successor
-	std::vector<std::vector<int>> lane_pairs = {{0, 3, -1},
+	std::vector<std::vector<int>> lane_pairs = {{0, -1, 3},
 												{2, -1, 5},
-												{3, 6, 0},
+												{3, 0, 6},
 												{5, 2, 8},
-												{6, 9, 3},
+												{6, 3, 9},
 												{8, 5, 11},
-												{9, -1, 6},
+												{9, 6, -1},
 												{11, 8, -1}};
 	int successor;
 	int predecessor;
@@ -1130,6 +1184,10 @@ TEST(OSILaneParing, multi_roads)
 	int gt_predecessor = -1;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		// std::cout << i << std::endl;
 		// ASSERT_EQ(osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(),1);
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
@@ -1187,20 +1245,20 @@ TEST(OSILaneParing, multi_lanesections)
 	const char *gt = SE_GetOSIGroundTruth(&sv_size);
 	osi_gt.ParseFromArray(gt, sv_size);
 	// order: lane, predecessor, successor
-	std::vector<std::vector<int>> lane_pairs = {{0, 3, -1},
+	std::vector<std::vector<int>> lane_pairs = {{0, -1, 3},
 												{2, -1, 6},
-												{4, 8, -1},
-												{3, 7, 0},
+												{4, -1, 8},
+												{3, 0, 7},
 												{6, 2, 10},
-												{8, 12, 4},
-												{7, 11, 3},
+												{8, 4, 12},
+												{7, 3, 11},
 												{10, 6, 14},
-												{12, 17, 8},
-												{11, 16, 7},
+												{12, 8, 17},
+												{11, 7, 16},
 												{14, 10, 19},
 												{15, -1, 20},
-												{17, -1, 12},
-												{16, -1, 11},
+												{17, 12, -1},
+												{16, 11, -1},
 												{19, 14, -1},
 												{20, 15, -1}};
 	int successor;
@@ -1209,8 +1267,10 @@ TEST(OSILaneParing, multi_lanesections)
 	int gt_predecessor;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		// std::cout << i << std::endl;
-		// ASSERT_EQ(osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(),1);
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1271,6 +1331,7 @@ TEST(OSILaneParing, highway_split)
 												{10, 2, 6},
 												{4, 8, -1},
 												{6, 10, -1}};
+
 	int successor;
 	int predecessor;
 	int gt_successor;
@@ -1278,8 +1339,10 @@ TEST(OSILaneParing, highway_split)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		// std::cout << i << std::endl;
-		// ASSERT_EQ(osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(),1);
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1313,8 +1376,81 @@ TEST(OSILaneParing, highway_split)
 			{
 				gt_predecessor = -1;
 			}
-			ASSERT_EQ(gt_successor, successor);
-			ASSERT_EQ(gt_predecessor, predecessor);
+			EXPECT_EQ(gt_successor, successor);
+			EXPECT_EQ(gt_predecessor, predecessor);
+		}
+	}
+	SE_Close();
+}
+
+//rht split is a merge with lht
+TEST(OSILaneParing, highway_merge_lht)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/highway_split_lht.xosc";
+	const char *Scenario_file = scenario_file.c_str();
+	int i_init = SE_Init(Scenario_file, 0, 0, 0, 0);
+	ASSERT_EQ(i_init, 0);
+
+	SE_StepDT(0.001f);
+	SE_UpdateOSIGroundTruth();
+	osi3::GroundTruth osi_gt;
+	int sv_size = 0;
+	const char *gt = SE_GetOSIGroundTruth(&sv_size);
+	osi_gt.ParseFromArray(gt, sv_size);
+	// order: lane, predecessor, successor
+	std::vector<std::vector<int>> lane_pairs = {{1, -1, 8},
+												{2, -1, 10},
+												{8, 1, 4},
+												{10, 2, 6},
+												{4, 8, -1},
+												{6, 10, -1}};
+
+	int successor;
+	int predecessor;
+	int gt_successor;
+	int gt_predecessor;
+
+	for (int i = 0; i < osi_gt.lane_size(); i++)
+	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
+		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
+		{
+			predecessor = -1;
+			successor = -1;
+			for (int k = 0; k < lane_pairs.size(); k++)
+			{
+				if (osi_gt.mutable_lane(i)->id().value() == lane_pairs[k][0])
+				{
+					predecessor = lane_pairs[k][1];
+					successor = lane_pairs[k][2];
+				}
+			}
+
+			if (successor == -1 && predecessor == -1)
+			{
+				ASSERT_EQ(true, false);
+			}
+			if (successor >= 0 && osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
+			{
+				gt_successor = (int)osi_gt.lane(i).classification().lane_pairing(j).successor_lane_id().value();
+			}
+			else
+			{
+				gt_successor = -1;
+			}
+			if (predecessor >= 0 && osi_gt.lane(i).classification().lane_pairing(j).has_antecessor_lane_id())
+			{
+				gt_predecessor = (int)osi_gt.lane(i).classification().lane_pairing(j).antecessor_lane_id().value();
+			}
+			else
+			{
+				gt_predecessor = -1;
+			}
+			EXPECT_EQ(gt_successor, successor);
+			EXPECT_EQ(gt_predecessor, predecessor);
 		}
 	}
 	SE_Close();
@@ -1334,15 +1470,15 @@ TEST(OSILaneParing, highway_merge)
 	const char *gt = SE_GetOSIGroundTruth(&sv_size);
 	osi_gt.ParseFromArray(gt, sv_size);
 	// order: lane, predecessor, successor
-	std::vector<std::vector<int>> lane_pairs = {{0, 11, -1},
+	std::vector<std::vector<int>> lane_pairs = {{0, -1, 11},
 												{2, -1, 13},
 												{3, -1, 14},
 												{5, -1, 16},
-												{6, -1, 11},
+												{6, 11, -1},
 												{8, 13, -1},
 												{9, 14, -1},
 												{10, 16, -1},
-												{11, 6, 0},
+												{11, 0, 6},
 												{13, 2, 8},
 												{14, 3, 9},
 												{16, 5, 10}};
@@ -1352,8 +1488,10 @@ TEST(OSILaneParing, highway_merge)
 	int gt_predecessor;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		// std::cout << i << std::endl;
-		// ASSERT_EQ(osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(),1);
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1394,6 +1532,97 @@ TEST(OSILaneParing, highway_merge)
 	SE_Close();
 }
 
+
+
+
+TEST(OSILaneParing, highway_merge_w_split)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/highway_intersection_test0.xosc";
+	const char *Scenario_file = scenario_file.c_str();
+	int i_init = SE_Init(Scenario_file, 0, 0, 0, 0);
+	ASSERT_EQ(i_init, 0);
+
+	SE_StepDT(0.001f);
+	SE_UpdateOSIGroundTruth();
+	osi3::GroundTruth osi_gt;
+	int sv_size = 0;
+	const char *gt = SE_GetOSIGroundTruth(&sv_size);
+	osi_gt.ParseFromArray(gt, sv_size);
+	// order: lane, predecessor, successor
+	std::vector<std::vector<int>> lane_pairs = {{0, -1, 5},
+												{1, -1, 6},
+												{3, -1, 8},
+												{4, -1, 9},
+												{5, 0, 11},
+												{6, 1, 12},
+												{8, 3, 14},
+												{9, 4, 15},
+												{10, -1, 16},
+												{11, 5, 24},
+												{12, 6, 25},
+												{14, 8, 27},
+												{15, 9, 28},
+												{16, 10, 30},
+												{24, 11, 17},
+												{25, 12, 18},
+												{27, 14, 20},
+												{28, 15, 21},
+												{30, 16, 23},
+												{17, 24, -1},
+												{18, 25, -1},
+												{20, 27, -1},
+												{21, 28, -1},
+												{23, 30, -1}};
+	int successor;
+	int predecessor;
+	int gt_successor;
+	int gt_predecessor;
+	for (int i = 0; i < osi_gt.lane_size(); i++)
+	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
+		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
+		{
+			predecessor = -1;
+			successor = -1;
+			for (int k = 0; k < lane_pairs.size(); k++)
+			{
+				if (osi_gt.mutable_lane(i)->id().value() == lane_pairs[k][0])
+				{
+					predecessor = lane_pairs[k][1];
+					successor = lane_pairs[k][2];
+				}
+			}
+
+			if (successor == -1 && predecessor == -1)
+			{
+				ASSERT_EQ(true, false);
+			}
+			if (successor >= 0 && osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
+			{
+				gt_successor = (int)osi_gt.lane(i).classification().lane_pairing(j).successor_lane_id().value();
+			}
+			else
+			{
+				gt_successor = -1;
+			}
+			if (predecessor >= 0 && osi_gt.lane(i).classification().lane_pairing(j).has_antecessor_lane_id())
+			{
+				gt_predecessor = (int)osi_gt.lane(i).classification().lane_pairing(j).antecessor_lane_id().value();
+			}
+			else
+			{
+				gt_predecessor = -1;
+			}
+			EXPECT_EQ(gt_successor, successor);
+			EXPECT_EQ(gt_predecessor, predecessor);
+		}
+	}
+	SE_Close();
+}
+
 TEST(OSILaneParing, circular_road)
 {
 	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/circular_road.xosc";
@@ -1408,13 +1637,13 @@ TEST(OSILaneParing, circular_road)
 	const char *gt = SE_GetOSIGroundTruth(&sv_size);
 	osi_gt.ParseFromArray(gt, sv_size);
 	// order: lane, predecessor, successor
-	std::vector<std::vector<int>> lane_pairs = {{0, 11, 5},
+	std::vector<std::vector<int>> lane_pairs = {{0, 5, 11},
 												{2, 3, 9},
-												{3, 6, 2},
+												{3, 2, 6},
 												{5, 0, 8},
-												{6, 9, 3},
+												{6, 3, 9},
 												{8, 5, 11},
-												{9, 2, 6},
+												{9, 6, 2},
 												{11, 8, 0}};
 	int successor;
 	int predecessor;
@@ -1422,8 +1651,10 @@ TEST(OSILaneParing, circular_road)
 	int gt_predecessor;
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		// std::cout << i << std::endl;
-		// ASSERT_EQ(osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(),1);
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
 			predecessor = -1;
@@ -1479,24 +1710,22 @@ TEST(OSILaneParing, simple_3way_intersection)
 	osi_gt.ParseFromArray(gt, sv_size);
 	// order: lane, predecessor, successor
 	std::vector<std::vector<int>> lane_pairs = {
-		{0, 18, -1},
+		{0, -1, 18},
 		{2, -1, 18},
-		{3, -1, 18},
+		{3, 18, -1},
 		{5, 18, -1},
-		{6, -1, 18},
+		{6, 18, -1},
 		{8, 18, -1},
 		{18, 3, 0},
+		{18, 3, 8},
 		{18, 2, 5},
-		{18, 6, 0},
 		{18, 2, 8},
 		{18, 6, 5},
-		{18, 3, 8}
+		{18, 6, 0}
 	};
 
 	std::sort(lane_pairs.begin(), lane_pairs.end());
 
-	int successor;
-	int predecessor;
 	int gt_successor;
 	int gt_predecessor;
 	static int counter = 0;
@@ -1506,25 +1735,12 @@ TEST(OSILaneParing, simple_3way_intersection)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		int current_lane_pair_length = (int)gt_lane_pairs.size();
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
-			predecessor = -1;
-			successor = -1;
-
-			for (int k = 0; k < lane_pairs.size(); k++)
-			{
-				if (osi_gt.mutable_lane(i)->id().value() == lane_pairs[k][0])
-				{
-					prev_id = lane_pairs[k][0];
-					predecessor = lane_pairs[k][1];
-					successor = lane_pairs[k][2];
-					if (prev_id == lane_pairs[k][0] && k == counter)
-					{
-						break;
-					}
-				}
-			}
 			if (osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
 			{
 				gt_successor = (int)osi_gt.lane(i).classification().lane_pairing(j).successor_lane_id().value();
@@ -1541,12 +1757,88 @@ TEST(OSILaneParing, simple_3way_intersection)
 			{
 				gt_predecessor = -1;
 			}
-			++counter;
 
 			gt_lane_pairs.push_back({(int)osi_gt.lane(i).id().value(), gt_predecessor, gt_successor});
 		}
-		if(current_lane_pair_length==gt_lane_pairs.size()){
-			gt_lane_pairs.push_back({(int)osi_gt.lane(i).id().value(), -1, -1});
+
+	}
+	std::sort(gt_lane_pairs.begin(), gt_lane_pairs.end());
+
+	ASSERT_EQ(gt_lane_pairs.size(), lane_pairs.size());
+	for (int i = 0; i < lane_pairs.size(); i++)
+	{
+		ASSERT_EQ(gt_lane_pairs[i][0], lane_pairs[i][0]);
+		ASSERT_EQ(gt_lane_pairs[i][1], lane_pairs[i][1]);
+		ASSERT_EQ(gt_lane_pairs[i][2], lane_pairs[i][2]);
+	}
+
+	SE_Close();
+}
+
+TEST(OSILaneParing, simple_3way_intersection_lht)
+{
+	std::string scenario_file = "../../../EnvironmentSimulator/Unittest/xosc/simple_3_way_intersection_osi_lht.xosc";
+	const char *Scenario_file = scenario_file.c_str();
+	int i_init = SE_Init(Scenario_file, 0, 0, 0, 0);
+	ASSERT_EQ(i_init, 0);
+
+	SE_StepDT(0.001f);
+	SE_UpdateOSIGroundTruth();
+	osi3::GroundTruth osi_gt;
+	int sv_size = 0;
+	const char *gt = SE_GetOSIGroundTruth(&sv_size);
+	osi_gt.ParseFromArray(gt, sv_size);
+	// order: lane, predecessor, successor
+	std::vector<std::vector<int>> lane_pairs = {
+		{0, -1, 18},
+		{2, -1, 18},
+		{3, 18, -1},
+		{5, 18, -1},
+		{6, 18, -1},
+		{8, 18, -1},
+		{18, 0, 3},
+		{18, 0, 6},
+		{18, 5, 2},
+		{18, 5, 6},
+		{18, 8, 2},
+		{18, 8, 3}
+	};
+
+	std::sort(lane_pairs.begin(), lane_pairs.end());
+
+	int gt_successor;
+	int gt_predecessor;
+	static int counter = 0;
+	static int prev_id;
+
+	std::vector<std::vector<int>> gt_lane_pairs;
+
+	for (int i = 0; i < osi_gt.lane_size(); i++)
+	{
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
+		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
+		{
+			if (osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
+			{
+				gt_successor = (int)osi_gt.lane(i).classification().lane_pairing(j).successor_lane_id().value();
+			}
+			else
+			{
+				gt_successor = -1;
+			}
+			if (osi_gt.lane(i).classification().lane_pairing(j).has_antecessor_lane_id())
+			{
+				gt_predecessor = (int)osi_gt.lane(i).classification().lane_pairing(j).antecessor_lane_id().value();
+			}
+			else
+			{
+				gt_predecessor = -1;
+			}
+
+			gt_lane_pairs.push_back({(int)osi_gt.lane(i).id().value(), gt_predecessor, gt_successor});
 		}
 
 	}
@@ -1578,31 +1870,29 @@ TEST(OSILaneParing, simple_4way_intersection)
 	osi_gt.ParseFromArray(gt, sv_size);
 	// order: lane, predecessor, successor
 	std::vector<std::vector<int>> lane_pairs = {
-		{0, 30, -1},
+		{0, -1, 30},
 		{2, -1, 30},
-		{3, -1, 30},
+		{3, 30, -1},
 		{5, 30, -1},
-		{6, -1, 30},
+		{6, 30, -1},
 		{8, 30, -1},
-		{9, -1, 30},
+		{9, 30, -1},
 		{11, 30, -1},
-		{30, 3, 0},
 		{30, 2, 5},
-		{30, 6, 0},
 		{30, 2, 8},
-		{30, 9, 0},
 		{30, 2, 11},
-		{30, 6, 5},
+		{30, 3, 0},
 		{30, 3, 8},
-		{30, 9, 5},
 		{30, 3, 11},
-		{30, 9, 8},
-		{30, 6, 11}
+		{30, 6, 0},
+		{30, 6, 5},
+		{30, 6, 11},
+		{30, 9, 0},
+		{30, 9, 5},
+		{30, 9, 8}
 	};
 	std::sort(lane_pairs.begin(), lane_pairs.end());
 
-	int successor;
-	int predecessor;
 	int gt_successor;
 	int gt_predecessor;
 	static int counter = 0;
@@ -1612,25 +1902,12 @@ TEST(OSILaneParing, simple_4way_intersection)
 
 	for (int i = 0; i < osi_gt.lane_size(); i++)
 	{
-		int current_lane_pair_length = (int)gt_lane_pairs.size();
+		if (osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size() == 0)
+		{
+			ASSERT_TRUE(false);
+		}
 		for (int j = 0; j < osi_gt.mutable_lane(i)->mutable_classification()->lane_pairing_size(); j++)
 		{
-			predecessor = -1;
-			successor = -1;
-
-			for (int k = 0; k < lane_pairs.size(); k++)
-			{
-				if (osi_gt.mutable_lane(i)->id().value() == lane_pairs[k][0])
-				{
-					prev_id = lane_pairs[k][0];
-					predecessor = lane_pairs[k][1];
-					successor = lane_pairs[k][2];
-					if (prev_id == lane_pairs[k][0] && k == counter)
-					{
-						break;
-					}
-				}
-			}
 			if (osi_gt.lane(i).classification().lane_pairing(j).has_successor_lane_id())
 			{
 				gt_successor = (int)osi_gt.lane(i).classification().lane_pairing(j).successor_lane_id().value();
@@ -1647,12 +1924,8 @@ TEST(OSILaneParing, simple_4way_intersection)
 			{
 				gt_predecessor = -1;
 			}
-			++counter;
 
 			gt_lane_pairs.push_back({(int)osi_gt.lane(i).id().value(), gt_predecessor, gt_successor});
-		}
-		if(current_lane_pair_length==gt_lane_pairs.size()){
-			gt_lane_pairs.push_back({(int)osi_gt.lane(i).id().value(), -1, -1});
 		}
 
 	}
@@ -1682,21 +1955,22 @@ TEST(OSILaneParing, Signs)
 	int sv_size = 0;
 	const char* gt = SE_GetOSIGroundTruth(&sv_size);
 	osi_gt.ParseFromArray(gt, sv_size);
-	// order: id, value, text, pitch, roll, height, s, t, zOffset
-	std::vector<std::tuple<int, double, std::string, double, double, double, double, double, double>> signs = { std::make_tuple(0, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
-																											   std::make_tuple(1, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
-																											   std::make_tuple(2, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(3, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(4, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(5, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
-																											   std::make_tuple(6, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(7, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(8, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(9, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
-																											   std::make_tuple(10, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7),
-																											   std::make_tuple(11, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7) };
+	// order: id, type, country, subtypevalue, text, pitch, roll, height, s, t, zOffset
+	std::vector<std::tuple<int, osi3::TrafficSign_MainSign_Classification_Type, double, std::string, double, double, double, double, double, double>> signs = { std::make_tuple(0, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
+																																					std::make_tuple(1, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DANGER_SPOT, -1, "", 0.0, 0.0, 0.61, 0.0, 3.57, 1.7),
+																																					std::make_tuple(2, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_ZEBRA_CROSSING, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(3, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(4, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_HILL_UPWARDS, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(5, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_LEFT, -1, "", 0.0, 0.0, 0.61, 100.0, 3.57, 1.7),
+																																					std::make_tuple(6, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_DOUBLE_TURN_RIGHT, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(7, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(8, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(9, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 200.0, 3.57, 1.7),
+																																					std::make_tuple(10, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7),
+																																					std::make_tuple(11, osi3::TrafficSign_MainSign_Classification_Type::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN, -1, "", 0.0, 0.0, 0.61, 500.0, 3.57, 1.7) };
 
 	int sign_id = 0;
+	osi3::TrafficSign_MainSign_Classification_Type type = osi3::TrafficSign_MainSign_Classification_Type_TYPE_UNKNOWN;
 	double value = 0;
 	std::string text = "";
 	double pitch = 0;
@@ -1713,17 +1987,19 @@ TEST(OSILaneParing, Signs)
 			if (traffic_sign.id().value() == std::get<0>(sign))
 			{
 				sign_id = std::get<0>(sign);
-				value = std::get<1>(sign);
-				text = std::get<2>(sign);
-				pitch = std::get<3>(sign);
-				roll = std::get<4>(sign);
-				height = std::get<5>(sign);
-				s = std::get<6>(sign);
-				t = std::get<7>(sign);
-				zOffset = std::get<8>(sign);
+				type = std::get<1>(sign);
+				value = std::get<2>(sign);
+				text = std::get<3>(sign);
+				pitch = std::get<4>(sign);
+				roll = std::get<5>(sign);
+				height = std::get<6>(sign);
+				s = std::get<7>(sign);
+				t = std::get<8>(sign);
+				zOffset = std::get<9>(sign);
 			}
 		}
 		ASSERT_EQ(traffic_sign.id().value(), sign_id);
+		ASSERT_EQ(static_cast<int>(traffic_sign.main_sign().classification().type()), static_cast<int>(type));
 		ASSERT_DOUBLE_EQ(traffic_sign.main_sign().classification().value().value(), value);
 		ASSERT_STREQ(traffic_sign.main_sign().classification().value().text().c_str(), text.c_str());
 		ASSERT_DOUBLE_EQ(traffic_sign.main_sign().base().orientation().pitch(), pitch);
@@ -1733,11 +2009,280 @@ TEST(OSILaneParing, Signs)
 	SE_Close();
 }
 
+void objectCallback(SE_ScenarioObjectState* state, void* my_data)
+{
+	SE_ReportObjectRoadPos(state->id, state->timestamp, state->roadId, 5, -2.3f, state->s, state->speed);
+}
+
+TEST(GatewayTest, TestReportToGatewayInCallback)
+{
+	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+
+	EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+
+	int n_Objects = SE_GetNumberOfObjects();
+	EXPECT_EQ(n_Objects, 2);
+
+	SE_RegisterObjectCallback(0, objectCallback, 0);
+
+	SE_ScenarioObjectState state;
+	SE_GetObjectState(0, &state);
+	ASSERT_EQ(state.laneId, -3);
+
+	SE_StepDT(0.01f);
+	SE_GetObjectState(0, &state);
+	ASSERT_EQ(state.laneId, 5);
+	ASSERT_FLOAT_EQ(state.laneOffset, -2.3f);
+}
+
+static void ghostParamDeclCB(void* user_arg)
+{
+	bool ghostMode = *((bool*)user_arg);
+
+	SE_SetParameterBool("GhostMode", ghostMode);
+}
+
+TEST(ExternalController, TestExternalDriver)
+{
+	void* vehicleHandle = 0;
+	SE_SimpleVehicleState vehicleState = { 0, 0, 0, 0, 0, 0 };
+	SE_ScenarioObjectState objectState;
+	SE_RoadInfo roadInfo;
+	double defaultTargetSpeed = 50.0;
+	double curveWeight = 30.0;
+	double throttleWeight = 0.01;
+	bool ghostMode[2] = { false, true };
+	float dt = 0.05f;
+
+	SE_AddPath("../../../resources/xodr");
+	SE_AddPath("../../../resources/xosc/Catalogs/Vehicles");
+
+	for (int i = 0; i < 2; i++)
+	{
+
+		SE_RegisterParameterDeclarationCallback(ghostParamDeclCB, &ghostMode[i]);
+
+		ASSERT_EQ(SE_Init("../../../EnvironmentSimulator/code-examples/test-driver/test-driver.xosc", 0, 0, 0, 0), 0);
+
+		// Lock object to the original lane
+		// If setting to false, the object road position will snap to closest lane
+		SE_SetLockOnLane(0, true);
+
+		// Initialize the vehicle model, fetch initial state from the scenario
+		SE_GetObjectState(0, &objectState);
+		vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
+
+		// show some road features, including road sensor
+		SE_ViewerShowFeature(4 + 8, true);  // NODE_MASK_TRAIL_DOTS (1 << 2) & NODE_MASK_ODR_FEATURES (1 << 3),
+
+		// Run for 40 seconds or until 'Esc' button is pressed
+		while (SE_GetSimulationTime() < 40 && SE_GetQuitFlag() != 1)
+		{
+			// Get road information at a point some speed dependent distance ahead
+			double targetSpeed;
+			if (ghostMode[i] == true)
+			{
+				// ghost version
+				float ghost_speed;
+				SE_GetRoadInfoAlongGhostTrail(0, 5 + 0.75f * vehicleState.speed, &roadInfo, &ghost_speed);
+				targetSpeed = ghost_speed;
+
+			}
+			else
+			{
+				// Look ahead along the road, to establish target info for the driver model
+				SE_GetRoadInfoAtDistance(0, 5 + 0.75f * vehicleState.speed, &roadInfo, 0, true);
+
+				// Slow down when curve ahead - CURVE_WEIGHT is the tuning parameter
+				targetSpeed = defaultTargetSpeed / (1 + curveWeight * fabs(roadInfo.angle));
+			}
+
+			// Steer towards where the point
+			double steerAngle = roadInfo.angle;
+
+			// Accelerate or decelerate towards target speed - THROTTLE_WEIGHT tunes magnitude
+			double throttle = throttleWeight * (targetSpeed - vehicleState.speed);
+
+			// Step vehicle model with driver input, but wait until time > 0
+			if (SE_GetSimulationTime() > 0)
+			{
+				SE_SimpleVehicleControlAnalog(vehicleHandle, dt, throttle, steerAngle);
+			}
+
+			// Fetch updated state and report to scenario engine
+			SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+
+			if (i == 0)
+			{
+				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 203.382, 1e-3);
+					EXPECT_NEAR(objectState.y, 78.384, 1e-3);
+					EXPECT_NEAR(objectState.h, 1.100, 1e-3);
+					EXPECT_NEAR(objectState.p, 6.263, 1e-3);
+				}
+				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 336.087, 1e-3);
+					EXPECT_NEAR(objectState.y, 341.748, 1e-3);
+					EXPECT_NEAR(objectState.h, 5.879, 1e-3);
+					EXPECT_NEAR(objectState.p, 0.034, 1e-3);
+				}
+			}
+			else if (i==1)
+			{
+				if (abs(SE_GetSimulationTime() - 11.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 188.556, 1e-3);
+					EXPECT_NEAR(objectState.y, 56.787, 1e-3);
+					EXPECT_NEAR(objectState.h, 1.017, 1e-3);
+					EXPECT_NEAR(objectState.p, 6.261, 1e-3);
+				}
+				else if (abs(SE_GetSimulationTime() - 30.0f) < SMALL_NUMBER)
+				{
+					SE_GetObjectState(0, &objectState);
+					EXPECT_NEAR(objectState.x, 319.988, 1e-3);
+					EXPECT_NEAR(objectState.y, 347.143, 1e-3);
+					EXPECT_NEAR(objectState.h, 6.051, 1e-3);
+					EXPECT_NEAR(objectState.p, 0.010, 1e-3);
+				}
+			}
+
+			// Report updated vehicle position and heading. z, pitch and roll will be aligned to the road
+			SE_ReportObjectPosXYH(0, 0, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+			// Finally, update scenario using same time step as for vehicle model
+			SE_StepDT(dt);
+		}
+		SE_Close();
+	}
+}
+
+TEST(SeedTest, TestGetAndSetSeed)
+{
+	std::string scenario_file = "../../../resources/xosc/cut-in.xosc";
+
+	SE_SetSeed(12345);
+	EXPECT_EQ(SE_Init(scenario_file.c_str(), 0, 0, 0, 0), 0);
+	ASSERT_EQ(SE_GetNumberOfObjects(), 2);
+	ASSERT_EQ(SE_GetSeed(), (unsigned int)12345);
+
+	SE_Close();
+}
+
+TEST(SimpleVehicleTest, TestControl)
+{
+	float dt = 0.01f;
+
+	std::string scenario_file = "../../../resources/xosc/parking_lot.xosc";
+	SE_SimpleVehicleState vehicleState = { 0, 0, 0, 0, 0, 0 };
+	SE_ScenarioObjectState objectState;
+	void* vehicleHandle = 0;
+
+	EXPECT_EQ(SE_Init(scenario_file.c_str(), 1, 0, 0, 0), 0);
+	ASSERT_EQ(SE_GetNumberOfObjects(), 1);
+
+	ASSERT_EQ(SE_GetObjectState(0, &objectState), 0);
+	EXPECT_NEAR(objectState.x, 1.800, 1e-3);
+	EXPECT_NEAR(objectState.y, -358.000, 1e-3);
+	EXPECT_NEAR(objectState.h, 1.570, 1e-3);
+
+	vehicleHandle = SE_SimpleVehicleCreate(objectState.x, objectState.y, objectState.h, 4.0, 0.0);
+
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 30.0, 0.2);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -18.639, 1e-3);
+	EXPECT_NEAR(vehicleState.y, -327.593, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 2.471, 1e-3);
+
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 60.0, -0.2);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -70.041, 1e-3);
+	EXPECT_NEAR(vehicleState.y, -245.796, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 60.000, 1e-3);
+
+	SE_SimpleVehicleSetEngineBrakeFactor(vehicleHandle, 0.001f);
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlTarget(vehicleHandle, dt, 80.0, 0.0);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -117.600342, 1e-3);
+	EXPECT_NEAR(vehicleState.y, -116.729, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 70.0, 1e-3);  // Limited by the default speed 70 km/h
+
+	// no drag factor
+	SE_SimpleVehicleSetEngineBrakeFactor(vehicleHandle, 0.0f);  // no engine brake
+	for (int i = 0; i < 200; i++)
+	{
+		SE_SimpleVehicleControlBinary(vehicleHandle, dt, 0, 0);
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -166.007, 1e-3);
+	EXPECT_NEAR(vehicleState.y, 14.636, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 70.0, 1e-3);
+
+	// Strong drag factor
+	SE_SimpleVehicleSetEngineBrakeFactor(vehicleHandle, 0.005f);
+	for (int i = 0; i < 600; i++)
+	{
+		SE_SimpleVehicleControlAnalog(vehicleHandle, dt, 0, 0);   // no throttle -> engine brake applied
+		SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+		SE_ReportObjectPosXYH(0, 0.0f, vehicleState.x, vehicleState.y, vehicleState.h, vehicleState.speed);
+
+		SE_StepDT(dt);
+	}
+
+	SE_SimpleVehicleGetState(vehicleHandle, &vehicleState);
+	EXPECT_NEAR(vehicleState.x, -211.792, 1e-3);
+	EXPECT_NEAR(vehicleState.y, 138.885, 1e-3);
+	EXPECT_NEAR(vehicleState.h, 1.924, 1e-3);
+	EXPECT_NEAR(vehicleState.speed, 3.459, 1e-3);
+
+	SE_Close();
+}
+
 int main(int argc, char **argv)
 {
 	testing::InitGoogleTest(&argc, argv);
 
+#if 0   // set to 1 and modify filter to run one single test
+	testing::GTEST_FLAG(filter) = "*TestControl*";
+#else
 	SE_LogToConsole(false);
+#endif
 
 	return RUN_ALL_TESTS();
 }

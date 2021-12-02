@@ -13,6 +13,7 @@
 #pragma once
 
 #include <string>
+#include "CommonMini.hpp"
 #include "OSCProperties.hpp"
 #include "Parameters.hpp"
 
@@ -41,6 +42,9 @@ namespace scenarioengine
 			CONTROLLER_TYPE_SUMO,
 			CONTROLLER_TYPE_REL2ABS,
 			CONTROLLER_TYPE_ACC,
+			CONTROLLER_TYPE_ALKS,
+			CONTROLLER_TYPE_UDP_DRIVER,
+			CONTROLLER_TYPE_ECE_ALKS_REF_DRIVER,
 			N_CONTROLLER_TYPES,
 			GHOST_RESERVED_TYPE = 100,
 			USER_CONTROLLER_TYPE_BASE = 1000,
@@ -53,14 +57,6 @@ namespace scenarioengine
 			KEY_Right = 0xFF53,       /* Right arrow */
 			KEY_Down = 0xFF54,        /* Down arrow */
 		};
-
-		typedef enum
-		{
-			CTRL_NONE = 0,
-			CTRL_LONGITUDINAL = 1,
-			CTRL_LATERAL = 2,
-			CTRL_BOTH = 3  // Also works as bitmask combi of LONG/LAT (1 | 2)
-		} Domain;
 
 		typedef enum
 		{
@@ -88,23 +84,27 @@ namespace scenarioengine
 		virtual int GetType() { return GetTypeStatic(); }
 
 		virtual void Assign(Object* object);
-		virtual void Activate(int domainMask) { domain_ = domainMask; };
-		virtual void Deactivate() { domain_ = 0; };
+		virtual void Activate(ControlDomains domainMask) { domain_ = domainMask; };
+		virtual void Deactivate() { domain_ = ControlDomains::DOMAIN_NONE; };
 		virtual void Init() {};
 		virtual void ReportKeyEvent(int key, bool down);
 
 		// Base class Step function should be called from derived classes
 		virtual void Step(double timeStep);
 
-		bool Active() { return domain_ != 0; };
+		bool Active() { return static_cast<int>(domain_) != 0; };
 		std::string GetName() { return name_; }
-		int GetDomain() { return domain_; }
+		ControlDomains GetDomain() { return domain_; }
 		int GetMode() { return mode_; }
 		std::string Mode2Str(int mode);
 		Object* GetObject() { return object_; }
 
+		bool IsActiveOnDomains(ControlDomains domainMask);
+		bool IsActiveOnAnyOfDomains(ControlDomains domainMask);
+		bool IsActive();
+
 	protected:
-		int domain_;  // bitmask according to ControllerDomain type
+		ControlDomains domain_;  // bitmask according to ControllerDomain type
 		std::string name_;
 		std::string type_name_;
 		Entities* entities_;

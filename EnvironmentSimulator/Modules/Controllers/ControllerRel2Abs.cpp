@@ -361,7 +361,7 @@ void ControllerRel2Abs::Step(double timeStep)
 			if (activeActions[i]->type_ == OSCPrivateAction::ActionType::LONG_SPEED)
 			{
 				LongSpeedAction* lsa = (LongSpeedAction*)activeActions[i];
-				if (lsa->target_->type_ == LongSpeedAction::Target::RELATIVE)
+				if (lsa->target_->type_ == LongSpeedAction::Target::TargetType::RELATIVE_SPEED)
 				{
 					LongSpeedAction::TargetRelative* target = (LongSpeedAction::TargetRelative*)lsa->target_;
 					if (target->object_ == ego)
@@ -586,12 +586,13 @@ void ControllerRel2Abs::Step(double timeStep)
 	prev_target_speed = object_->GetSpeed();
 
 	gateway_->reportObject(object_->id_, object_->name_, static_cast<int>(object_->type_), object_->category_, object_->model_id_,
-		object_->GetActivatedControllerType(), object_->boundingbox_, 0, object_->speed_, object_->wheel_angle_, object_->wheel_rot_, &object_->pos_);
+		object_->GetActivatedControllerType(), object_->boundingbox_, static_cast<int>(object_->scaleMode_), 0.0,
+		object_->speed_, object_->wheel_angle_, object_->wheel_rot_, &object_->pos_);
 
 	Controller::Step(timeStep);
 }
 
-void ControllerRel2Abs::Activate(int domainMask)
+void ControllerRel2Abs::Activate(ControlDomains domainMask)
 {
 #ifdef CONTROLLER_REL2ABS_DEBUG
 	logData.open("LogData.csv");

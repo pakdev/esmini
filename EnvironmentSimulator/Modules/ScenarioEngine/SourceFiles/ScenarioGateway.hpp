@@ -15,6 +15,8 @@
 #include "OSCBoundingBox.hpp"
 #include "Entities.hpp"
 
+#define DAT_FILE_FORMAT_VERSION 1
+
 namespace scenarioengine
 {
 
@@ -24,7 +26,7 @@ namespace scenarioengine
 	{
 		int id;
 		int model_id;
-		int obj_type; // 0=Vehicle, 1=Pedestrian, 2=MiscObj
+		int obj_type; // 0=None, 1=Vehicle, 2=Pedestrian, 3=MiscObj (see Object::Type enum)
 		int obj_category; // sub type for vehicle, pedestrian and miscobj
 		int ctrl_type;  // See Controller::Type enum
 		float timeStamp;
@@ -33,6 +35,7 @@ namespace scenarioengine
 		float wheel_angle; // Only used for vehicle
 		float wheel_rot; // Only used for vehicle
 		OSCBoundingBox boundingbox;
+		int scaleMode; // 0=None, 1=BoundingBoxToModel, 2=ModelToBoundingBox (see enum EntityScaleMode)
 	};
 
 	struct ObjectStateStruct
@@ -67,19 +70,21 @@ namespace scenarioengine
 	public:
 		ObjectState();
 		ObjectState(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot, roadmanager::Position* pos);
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot, roadmanager::Position* pos);
 		ObjectState(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot, double x, double y, double z, double h, double p, double r);
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot, double x, double y, double z, double h, double p, double r);
 		ObjectState(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot, int roadId, int laneId, double laneOffset, double s);
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot, int roadId, int laneId, double laneOffset, double s);
 		ObjectState(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot, int roadId, double lateralOffset, double s);
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot, int roadId, double lateralOffset, double s);
 
 		ObjectStateStruct getStruct() { return state_; }
 
 		void Print();
+		void clearDirtyBits() { dirty_ = 0; }
 
 		ObjectStateStruct state_;
+		unsigned int dirty_;
 
 	private:
 
@@ -93,30 +98,39 @@ namespace scenarioengine
 		ScenarioGateway();
 		~ScenarioGateway();
 
-		void reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot, roadmanager::Position *pos);
+		int reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot, roadmanager::Position *pos);
 
-		void reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot,
+		int reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot,
 			double x, double y, double z, double h, double p, double r);
 
-		void reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot,
+		int reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot,
 			double x, double y, double h);
 
-		void reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot,
+		int reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot,
 			int roadId, int laneId, double laneOffset, double s);
 
-		void reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
-			double timestamp, double speed, double wheel_angle, double wheel_rot,
+		int reportObject(int id, std::string name, int obj_type, int obj_category, int model_id, int ctrl_type, OSCBoundingBox boundingbox,
+			int scaleMode, double timestamp, double speed, double wheel_angle, double wheel_rot,
 			int roadId, double lateralOffset, double s);
 
-		void reportObjectSpeed(int id, double speed);
-		void reportObjectVel(int id, double x_vel, double y_vel, double z_vel);
-		void reportObjectAcc(int id, double x_acc, double y_acc, double z_acc);
-		void reportObjectAngularVel(int id, double h_rate, double p_rate, double r_rate);
-		void reportObjectAngularAcc(int id, double h_acc, double p_acc, double r_acc);
+		int updateObjectPos(int id, double timestamp, roadmanager::Position* pos);
+		int updateObjectRoadPos(int id, double timestamp, int roadId, double lateralOffset, double s);
+		int updateObjectLanePos(int id, double timestamp, int roadId, int laneId, double offset, double s);
+		int updateObjectWorldPos(int id, double timestamp, double x, double y, double z, double h, double p, double r);
+		int updateObjectWorldPosXYH(int id, double timestamp, double x, double y, double h);
+		int updateObjectSpeed(int id, double timestamp, double speed);
+		int updateObjectVel(int id, double timestamp, double x_vel, double y_vel, double z_vel);
+		int updateObjectAcc(int id, double timestamp, double x_acc, double y_acc, double z_acc);
+		int updateObjectAngularVel(int id, double timestamp, double h_rate, double p_rate, double r_rate);
+		int updateObjectAngularAcc(int id, double timestamp, double h_acc, double p_acc, double r_acc);
+		int updateObjectWheelAngle(int id, double timestamp, double wheelAngle);
+		int updateObjectWheelRotation(int id, double timestamp, double wheelRotation);
+		bool isObjectReported(int id);
+		void clearDirtyBits();
 
 		void removeObject(int id);
 		void removeObject(std::string name);
@@ -131,7 +145,7 @@ namespace scenarioengine
 		std::vector<ObjectState*> objectState_;
 
 	private:
-		void updateObjectInfo(ObjectState* obj_state, double timestamp, double speed, double wheel_angle, double wheel_rot);
+		int updateObjectInfo(ObjectState* obj_state, double timestamp, double speed, double wheel_angle, double wheel_rot);
 		std::ofstream data_file_;
 	};
 

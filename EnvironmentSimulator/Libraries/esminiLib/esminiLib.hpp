@@ -168,6 +168,35 @@ extern "C"
 	SE_DLL_API void SE_SetLogFilePath(const char *logFilePath);
 
 	/**
+	Get seed that esmini uses for current session. It can then be re-used
+	in order to achieve repeatable results (for actions that involes some
+	degree of randomness, e.g. TrafficSwarmAction).
+	@return seed number
+	*/
+	SE_DLL_API unsigned int SE_GetSeed();
+
+	/**
+		Set seed that will be used by esmini random number generator.
+		Using same seed will ensure same result.
+		Note: Also timesteps has to be equal. Make sure to use SE_StepDT()
+		with fixed timestep, or at least same sequence of dt each run.
+		@param seed number
+	*/
+	SE_DLL_API void SE_SetSeed(unsigned int seed);
+
+	/**
+		Register a function and optional argument (ref) to be called back from esmini after ParameterDeclarations has been parsed,
+		but before the scenario is initialized, i.e. before applying the actions in the Init block. One use-case is to
+		set parameter values for initial entity states, e.g. s value in lane position. So this callback will happen just
+		after parameters has been parsed, but before they are applied, providing an opportunity to control the initial
+		states via API.
+		Registered init callbacks are be cleared between SE_Init calls, i.e. needs to be registered
+		@param fnPtr A pointer to the function to be invoked
+		@param user_data Optional pointer to a local data object that will be passed as argument in the callback. Set 0/NULL if not needed.
+	*/
+	SE_DLL_API void SE_RegisterParameterDeclarationCallback(void (*fnPtr)(void*), void* user_data);
+
+	/**
 		Configure tolerances/resolution for OSI road features
 		@param max_longitudinal_distance Maximum distance between OSI points, even on straight road. Default=50(m)
 		@param max_lateral_deviation Control resolution w.r.t. curvature default=0.05(m)
@@ -243,7 +272,8 @@ extern "C"
 	SE_DLL_API float SE_GetSimTimeStep();
 
 	/**
-		Get the bool value of the end of the scenario
+		Is esmini about to quit?
+		@return 0 if not, 1 if yes, -1 if some error e.g. scenario not loaded
 	*/
 	SE_DLL_API int SE_GetQuitFlag();
 
@@ -276,7 +306,7 @@ extern "C"
 	/**
 		Get the number of vehicle properties by index
 		@param index The index of the vehicle
-		@return number of parameters if found, else 0;
+		@return number of parameters if found, -1 indicating some error
 	*/
 	SE_DLL_API int SE_GetNumberOfProperties(int index);
 	/**
@@ -545,7 +575,7 @@ extern "C"
 
 	/**
 		Get the number of entities in the current scenario
-		@return Number of entities
+		@return Number of entities, -1 on error e.g. scenario not initialized
 	*/
 	SE_DLL_API int SE_GetNumberOfObjects();
 
@@ -575,7 +605,7 @@ extern "C"
 	/**
 		Check whether an object has a ghost (special purpose lead vehicle)
 		@param index Index of the object. Note: not ID
-		@return 1 if ghost, 0 if not
+		@return 1 if ghost, 0 if not, -1 indicates error e.g. scenario not loaded
 	*/
 	SE_DLL_API int SE_ObjectHasGhost(int index);
 
@@ -594,7 +624,7 @@ extern "C"
 		@param data Struct including all result values, see typedef for details
 		@param lookAheadMode Measurement strategy: Along 0=lane center, 1=road center (ref line) or 2=current lane offset. See roadmanager::Position::LookAheadMode enum
 		@param inRoadDrivingDirection If true always look along primary driving direction. If false, look in most straightforward direction according to object heading.
-		@return 0 if successful, -2 if probe reached end of road, -1 if some error
+		@return 0 if successful, 1 if probe reached end of road, 2 if end ouf route, -1 if some error
 	*/
 	SE_DLL_API int SE_GetRoadInfoAtDistance(int object_id, float lookahead_distance, SE_RoadInfo *data, int lookAheadMode, bool inRoadDrivingDirection);
 
@@ -624,6 +654,13 @@ extern "C"
 	SE_DLL_API int SE_AddObjectSensor(int object_id, float x, float y, float z, float h, float rangeNear, float rangeFar, float fovH, int maxObj);
 
 	/**
+		Allow to view detected sensor data.
+		@param object_id Handle to the object to which the sensor should be attached
+		@return Sensor ID (Global index of sensor), -1 if unsucessful
+	*/
+	SE_DLL_API int SE_ViewSensorData(int object_id);
+
+	/**
 		Fetch list of identified objects from a sensor
 		@param sensor_id Handle (index) to the sensor
 		@param list Array of object indices
@@ -635,8 +672,9 @@ extern "C"
 		Register a function and optional parameter (ref) to be called back from esmini after each frame (update of scenario)
 		The current state of specified entity will be returned.
 		Complete or part of the state can then be overridden by calling the SE_ReportObjectPos/SE_ReportObjectRoadPos functions.
+		Registered callbacks will be cleared between SE_Init calls.
 		@param object_id Handle to the position object (entity)
-		@param SE_ScenarioObjectState A pointer to the function to be invoked
+		@param fnPtr A pointer to the function to be invoked
 		@param user_data Optional pointer to a local data object that will be passed as argument in the callback. Set 0/NULL if not needed.
 	*/
 	SE_DLL_API void SE_RegisterObjectCallback(int object_id, void (*fnPtr)(SE_ScenarioObjectState *, void *), void *user_data);
@@ -685,6 +723,7 @@ extern "C"
 
 	/**
 		Switch off logging to OSI file(s)
+		@return 0 if successful, -1 if not
 	*/
 	SE_DLL_API void SE_DisableOSIFile();
 
@@ -715,9 +754,10 @@ extern "C"
 
 	/**
 		The SE_UpdateOSIDynamicGroundTruth function updates OSI dynamic Groundtruth
+		@param reportGhost Optional flag, if we should include ghost vehicle info in the osi messages
 		@return 0
 	*/
-	SE_DLL_API int SE_UpdateOSIDynamicGroundTruth();
+	SE_DLL_API int SE_UpdateOSIDynamicGroundTruth(bool reportGhost = true);
 
 	/**
 		The SE_GetOSIGroundTruth function returns a char array containing the osi GroundTruth serialized to a string
@@ -730,6 +770,12 @@ extern "C"
 		@return osi3::GroundTruth*
 	*/
 	SE_DLL_API const char *SE_GetOSIGroundTruthRaw();
+
+	/**
+		The SE_SetOSISensorDataRaw function returns a char array containing the OSI GroundTruth information
+		@return 0
+	*/
+	SE_DLL_API int SE_SetOSISensorDataRaw(const char* sensordata);
 
 	/**
 		The SE_GetOSISensorDataRaw function returns a char array containing the OSI SensorData information
@@ -781,11 +827,11 @@ extern "C"
 	SE_DLL_API int SE_OSISetTimeStamp(unsigned long long int nanoseconds);
 
 
-	SE_DLL_API void SE_LogMessage(char *message);
+	SE_DLL_API void SE_LogMessage(const char *message);
 
 	// Viewer settings
 	/**
-		The SE_GetOSILaneBoundaryIds function the global ids for left, far elft, right and far right lane boundaries
+		Switch on/off visualization of specified features
 		@param featureType Type of the features, see viewer::NodeMask typedef
 		@param enable Set true to show features, false to hide
 	*/
@@ -798,9 +844,10 @@ extern "C"
 		@param y Initial position Y world coordinate
 		@param h Initial heading
 		@param length Length of the vehicle
+		@param speed Initial speed
 		@return Handle to the created object
 	*/
-	SE_DLL_API void *SE_SimpleVehicleCreate(float x, float y, float h, float length);
+	SE_DLL_API void *SE_SimpleVehicleCreate(float x, float y, float h, float length, float speed);
 
 	/**
 		Delete an instance of the simplistic vehicle model
@@ -817,7 +864,7 @@ extern "C"
 	SE_DLL_API void SE_SimpleVehicleControlBinary(void *handleSimpleVehicle, double dt, int throttle, int steering); // throttle and steering [-1, 0 or 1]
 
 	/**
-		Control the speed and steering with floaing values in the range [-1, 1], suitable for driver models.
+		Control the speed and steering with floating values in the range [-1, 1], suitable for driver models.
 		The function also steps the vehicle model, updating its position according to motion state and timestep.
 		@param dt timesStep (s)
 		@param throttle Longitudinal control, -1: maximum brake, 0: no acceleration, +1: maximum acceleration
@@ -826,22 +873,85 @@ extern "C"
 	SE_DLL_API void SE_SimpleVehicleControlAnalog(void *handleSimpleVehicle, double dt, double throttle, double steering); // throttle and steering [-1, 0 or 1]
 
 	/**
+		Control the speed and steering by providing steering and speed targets
+		The function also steps the vehicle model, updating its position according to motion state and timestep.
+		@param dt timesStep (s)
+		@param target_speed Requested speed
+		@param heading_to_target Heading angle to a target position
+	*/
+	SE_DLL_API void SE_SimpleVehicleControlTarget(void* handleSimpleVehicle, double dt, double target_speed, double heading_to_target);
+
+	/**
 		Set maximum vehicle speed.
 		@param speed Maximum speed (km/h)
 	*/
 	SE_DLL_API void SE_SimpleVehicleSetMaxSpeed(void *handleSimpleVehicle, float speed);
 
 	/**
-		Set acceleration scale factor
-		@param accScale Acceleration scale factor speed (0:10)
+		Set maximum vehicle acceleration.
+		@param speed Maximum acceleration (m/s^2)
 	*/
-	SE_DLL_API void SE_SimpleVehicleSetAcclerationScale(void* handleSimpleVehicle, float accScale);
+	SE_DLL_API void SE_SimpleVehicleSetMaxAcceleration(void* handleSimpleVehicle, float maxAcceleration);
+
+	/**
+		Set engine brake factor, applied when no throttle is applied
+		@param engineBrakeFactor recommended range = [0.0, 0.01], default = 0.001
+	*/
+	SE_DLL_API void SE_SimpleVehicleSetEngineBrakeFactor(void* handleSimpleVehicle, float engineBrakeFactor);
+
+	/**
+		Set steering scale factor, which will limit the steering range as speed increases
+		@param steeringScale recommended range = [0.0, 0.1], default = 0.018
+	*/
+	SE_DLL_API void SE_SimpleVehicleSteeringScale(void* handleSimpleVehicle, float steeringScale);
+
+	/**
+		Set steering return factor, which will make the steering wheel strive to neutral position (0 angle)
+		@param steeringScale recommended range = [0.0, 10], default = 4.0
+	*/
+	SE_DLL_API void SE_SimpleVehicleSteeringReturnFactor(void* handleSimpleVehicle, float steeringReturnFactor);
+
+	/**
+		Set steering rate, which will affect the angular speed of which the steering wheel will turn
+		@param steeringRate recommended range = [0.0, 50.0], default = 8.0
+	*/
+	SE_DLL_API void SE_SimpleVehicleSteeringRate(void* handleSimpleVehicle, float steeringRate);
+
+	/**
+		Set engine brake factor, applied when no throttle is applied
+		@param engineBrakeFactor recommended range = [0.0, 0.01], default = 0.001
+	*/
+	SE_DLL_API void SE_SimpleVehicleSetEngineBrakeFactor(void* handleSimpleVehicle, float engineBrakeFactor);
 
 	/**
 		Get current state of the vehicle. Typically called after Control has been applied.
 		@param state Pointer/reference to a SE_SimpleVehicleState struct to be filled in
 	*/
 	SE_DLL_API void SE_SimpleVehicleGetState(void *handleSimpleVehicle, SE_SimpleVehicleState *state);
+
+	/**
+		Capture screen of next frame and save as jpeg file
+		@return 0 if successful, -1 if not
+	*/
+	SE_DLL_API int SE_CaptureNextFrame();
+
+	/**
+		Activate or deactivate continuous screen capture
+		@param state true=activate, false=deactivate
+		@return 0 if successful, -1 if not
+	*/
+	SE_DLL_API int SE_CaptureContinuously(bool state);
+
+	/**
+	Add a camera mode with custom position and orientation (heading and pitch)
+	@param x X coordinate relative vehicle curerntly in focus
+	@param y Y coordinate relative vehicle curerntly in focus
+	@param z Z coordinate relative vehicle curerntly in focus
+	@param h H Heading (yaw) relative vehicle curerntly in focus
+	@param p P Pitch relative vehicle curerntly in focus
+	@return 0 if successful, -1 if not
+	*/
+	SE_DLL_API int SE_AddCustomCamera(double x, double y, double z, double h, double p);
 
 #ifdef __cplusplus
 }

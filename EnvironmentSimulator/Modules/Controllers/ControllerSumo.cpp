@@ -125,7 +125,8 @@ void ControllerSumo::Step(double timeStep)
 				LOG("Adding new vehicle: %s", deplist[i].c_str());
 				vehicle->name_ = deplist[i];
 				vehicle->controller_ = this;
-				vehicle->model_filepath_ = template_vehicle_->model_filepath_;
+				vehicle->model3d_ = template_vehicle_->model3d_;
+				vehicle->scaleMode_ = EntityScaleMode::BB_TO_MODEL;
 				entities_->addObject(vehicle);
 			}
 		}
@@ -164,7 +165,8 @@ void ControllerSumo::Step(double timeStep)
 
 			// Report updated state to the gateway
 			gateway_->reportObject(obj->id_, obj->name_, static_cast<int>(obj->type_), obj->category_, obj->model_id_,
-					obj->GetActivatedControllerType(), obj->boundingbox_, time_, obj->speed_, obj->wheel_angle_, obj->wheel_rot_, &obj->pos_);
+				obj->GetActivatedControllerType(), obj->boundingbox_, static_cast<int>(obj->scaleMode_), time_,
+				obj->speed_, obj->wheel_angle_, obj->wheel_rot_, &obj->pos_);
 		}
 		else if (!entities_->object_[i]->IsGhost())
 		{
@@ -178,16 +180,16 @@ void ControllerSumo::Step(double timeStep)
 	Controller::Step(timeStep);
 }
 
-void ControllerSumo::Activate(int domainMask)
+void ControllerSumo::Activate(ControlDomains domainMask)
 {
 	// Reset time
 	time_ = 0;
 
 	// SUMO controller forced into both domains
-	if (domainMask != Domain::CTRL_BOTH)
+	if (domainMask != ControlDomains::DOMAIN_BOTH)
 	{
 		LOG("SUMO controller forced into operation of both domains (lat/long)");
-		domainMask = Domain::CTRL_BOTH;
+		domainMask = ControlDomains::DOMAIN_BOTH;
 	}
 
 	Controller::Activate(domainMask);

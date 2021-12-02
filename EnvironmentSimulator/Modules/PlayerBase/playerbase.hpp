@@ -67,16 +67,18 @@ public:
 	void Frame(); // let player calculate actual time step
 	void Frame(double timestep_s);
 	void ScenarioFrame(double timestep_s);
+	void ScenarioFramePart(double timestep_s);
 	void ShowObjectSensors(bool mode);
 	void AddObjectSensor(int object_index, double pos_x, double pos_y, double pos_z, double heading,
 						 double near, double far, double fovH, int maxObj);
+	void AddOSIDetection(int object_index);
 	void SetFixedTimestep(double timestep) { fixed_timestep_ = timestep; }
 	double GetFixedTimestep() { return fixed_timestep_; }
 	int GetOSIFreq() { return osi_freq_; }
 	void RegisterObjCallback(int id, ObjCallbackFunc func, void *data);
 	void UpdateCSV_Log();
 	int GetNumberOfParameters();
-	const char *GetParameterName(int index, int *type);
+	const char *GetParameterName(int index, OSCParameterDeclarations::ParameterType *type);
 	int SetParameterValue(const char *name, const void *value);
 	int GetParameterValue(const char *name, void *value);
 	int GetParameterValueInt(const char *name, int &value);
@@ -107,10 +109,14 @@ public:
 #ifdef _USE_OSG
 	viewer::Viewer *viewer_;
 	std::vector<viewer::SensorViewFrustum *> sensorFrustum;
+	viewer::OSISensorDetection* OSISensorDetection;
 	ViewerState viewerState_;
 	int InitViewer();
 	void CloseViewer();
 	void ViewerFrame();
+	void CaptureNextFrame();
+	void CaptureContinuously(bool state);
+	void AddCustomCamera(double x, double y, double z, double h, double p);
 #else
 	void *viewer_;
 #endif
@@ -119,7 +125,7 @@ public:
 	const double maxStepSize;
 	const double minStepSize;
 	SE_Options opt;
-	std::vector<ObjCallback> callback;
+	std::vector<ObjCallback> objCallback;
 	std::string exe_path_;
 
 private:

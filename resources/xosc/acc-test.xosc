@@ -13,7 +13,7 @@
    <ParameterDeclarations>
       <ParameterDeclaration name="HostVehicle" parameterType="string" value="car_white"/>
       <ParameterDeclaration name="TargetVehicle" parameterType="string" value="car_red"/>
-      <ParameterDeclaration name="EgoSpeed" parameterType="double" value="190"/>
+      <ParameterDeclaration name="EgoSpeed" parameterType="double" value="120"/>
       <ParameterDeclaration name="TargetSpeed" parameterType="double" value="30"/>
       <ParameterDeclaration name="EgoS" parameterType="double" value="20"/>
       <ParameterDeclaration name="TargetS" parameterType="double" value="100"/>
@@ -42,15 +42,17 @@
             <Controller name="ACCController">
                 <Properties>
                     <Property name="timeGap" value="1.0" />
+                    <Property name="mode" value="override" />
+                    <Property name="setSpeed" value="${$EgoSpeed / 3.6}" />
                 </Properties>
             </Controller>            
          </ObjectController>         
       </ScenarioObject>
       <ScenarioObject name="Target">
          <CatalogReference catalogName="VehicleCatalog" entryName="$TargetVehicle"/>
-        <!-- <ObjectController> -->
+         <!-- <ObjectController> -->
             <!-- <CatalogReference catalogName="ControllerCatalog" entryName="interactiveDriver" /> -->
-        <!-- </ObjectController>          -->
+         <!-- </ObjectController> -->
       </ScenarioObject>
    </Entities>
    <Storyboard>
@@ -65,9 +67,6 @@
                   </TeleportAction>
                </PrivateAction>
                <PrivateAction>
-                    <ActivateControllerAction longitudinal="true" lateral="false" />
-               </PrivateAction>
-               <PrivateAction>
                   <LongitudinalAction>
                      <SpeedAction>
                         <SpeedActionDynamics dynamicsShape="step" dynamicsDimension="time" value="0.0"/>
@@ -76,6 +75,9 @@
                         </SpeedActionTarget>
                      </SpeedAction>
                   </LongitudinalAction>
+               </PrivateAction>
+               <PrivateAction>
+                    <ActivateControllerAction longitudinal="true" lateral="false" />
                </PrivateAction>
             </Private>
             <Private entityRef="Target">
@@ -229,6 +231,59 @@
                   </Event>
                </Maneuver>
             </ManeuverGroup>
+            <ManeuverGroup maximumExecutionCount="1" name="EgoSpeedChange">
+               <Actors selectTriggeringEntities="false">
+                  <EntityRef entityRef="Ego"/>
+               </Actors>
+               <Maneuver name="EgoSpeedManeuver">
+                  <Event name="EgoSpeedEvent" priority="overwrite">
+                     <Action name="EgoSpeedAction">
+                        <PrivateAction>
+                           <LongitudinalAction>
+                              <SpeedAction>
+                                 <SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/>
+                                 <SpeedActionTarget>
+                                    <AbsoluteTargetSpeed value="1"/>
+                                 </SpeedActionTarget>
+                              </SpeedAction>
+                           </LongitudinalAction>
+                        </PrivateAction>
+                     </Action>
+                     <StartTrigger>
+                        <ConditionGroup>
+                           <Condition name="EgoSpeedCondition" delay="0" conditionEdge="rising">
+                             <ByValueCondition>
+                                <SimulationTimeCondition value="2" rule="greaterThan"/>
+                             </ByValueCondition>
+                           </Condition>
+                        </ConditionGroup>
+                     </StartTrigger>
+                  </Event>
+                  <Event name="EgoSpeedEvent" priority="overwrite">
+                     <Action name="EgoSpeedAction">
+                        <PrivateAction>
+                           <LongitudinalAction>
+                              <SpeedAction>
+                                 <SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/>
+                                 <SpeedActionTarget>
+                                    <AbsoluteTargetSpeed value="${0.25 * $EgoSpeed / 3.6}"/>
+                                 </SpeedActionTarget>
+                              </SpeedAction>
+                           </LongitudinalAction>
+                        </PrivateAction>
+                     </Action>
+                     <StartTrigger>
+                        <ConditionGroup>
+                           <Condition name="EgoSpeedCondition" delay="0" conditionEdge="rising">
+                             <ByValueCondition>
+                                <SimulationTimeCondition value="10" rule="greaterThan"/>
+                             </ByValueCondition>
+                           </Condition>
+                        </ConditionGroup>
+                     </StartTrigger>
+                  </Event>
+               </Maneuver>
+            </ManeuverGroup>
             <StartTrigger>
                <ConditionGroup>
                   <Condition name="CutInActStart" delay="0" conditionEdge="none">
@@ -240,7 +295,7 @@
             </StartTrigger>
             <StopTrigger>
                 <ConditionGroup>
-                   <Condition name="ActStopCondition" delay="7" conditionEdge="rising">
+                   <Condition name="ActStopCondition" delay="12" conditionEdge="rising">
                       <ByValueCondition>
                          <StoryboardElementStateCondition storyboardElementType="event"
                                                           storyboardElementRef="TargetBrake2Event"

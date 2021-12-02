@@ -17,6 +17,7 @@
 #include "pugixml.hpp"
 #include "Parameters.hpp"
 #include "Entities.hpp"
+#include "OSCPrivateAction.hpp"
 
 #define CONTROLLER_REL2ABS_TYPE_NAME "ControllerRel2Abs"
 
@@ -58,7 +59,16 @@ namespace scenarioengine
 		double pred_horizon;
 		double pred_timestep;
 		double pred_nbr_timesteps;
-		int action_whitelist[7] = { 0, 1, 2, 3, 4, 11, 12 };
+		OSCPrivateAction::ActionType action_whitelist[7] =
+		{
+			OSCPrivateAction::ActionType::LONG_SPEED,
+			OSCPrivateAction::ActionType::LONG_DISTANCE,
+			OSCPrivateAction::ActionType::LAT_LANE_CHANGE,
+			OSCPrivateAction::ActionType::LAT_LANE_OFFSET,
+			OSCPrivateAction::ActionType::LAT_DISTANCE,
+			OSCPrivateAction::ActionType::ASSIGN_ROUTE,
+			OSCPrivateAction::ActionType::FOLLOW_TRAJECTORY
+		};
 		double switching_threshold_dist;
 		double switching_threshold_speed;
 
@@ -70,7 +80,7 @@ namespace scenarioengine
 
 		void Init();
 		void Step(double timeStep);
-		void Activate(int domainMask);
+		void Activate(ControlDomains domainMask);
 		void ReportKeyEvent(int key, bool down);
 		void SetScenarioEngine(ScenarioEngine* scenarioEngine) { scenarioEngine_ = scenarioEngine; };
 		void CopyPosition(Object* object, position_copy* obj_copy);

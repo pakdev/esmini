@@ -89,6 +89,30 @@ typedef struct
 	int toLane;
 } RM_RoadObjValidity;
 
+typedef struct
+{
+	float a_;
+	float axis_;
+	float b_;
+	const char* ellps_;
+	float k_;
+	float k_0_;
+	float lat_0_;
+	float lon_0_;
+	float lon_wrap_;
+	float over_;
+	const char* pm_;
+	const char* proj_;
+	const char* units_;
+	const char* vunits_;
+	float x_0_;
+	float y_0_;
+	const char* datum_;
+	const char* geo_id_grids_;
+	float zone_;
+	int towgs84_;
+} RM_GeoReference;
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -109,13 +133,13 @@ extern "C"
 
 	/**
 	Create a position object
-	@return Handle to the position object, to use for operations
+	@return Handle >= 0 to the position object to use for operations or -1 on error
 	*/
 	RM_DLL_API int RM_CreatePosition();
 
 	/**
 	Get the number of created position objects
-	@return Number of created position objects
+	@return Number of created position objects or -1 on error
 	*/
 	RM_DLL_API int RM_GetNrOfPositions();
 
@@ -197,14 +221,14 @@ extern "C"
 
 	/**
 	Get the total number fo roads in the road network of the currently loaded OpenDRIVE file.
-	@return Number of roads
+	@return Number of roads, -1 indicates error e.g. no roadnetwork loaded
 	*/
 	RM_DLL_API int RM_GetNumberOfRoads();
 
 	/**
 	Get the Road ID of the road with specified index. E.g. if there are 4 roads, index 3 means the last one.
 	@param index The index of the road
-	@return The ID of the road
+	@return The ID of the road, -1 on error
 	*/
 	RM_DLL_API int RM_GetIdOfRoadFromIndex(int index);
 
@@ -219,7 +243,7 @@ extern "C"
 	Get the number of drivable lanes of specified road
 	@param roadId The road ID
 	@param s The distance along the road at what point to check number of lanes (which can vary along the road)
-	@return The number of drivable lanes
+	@return The number of drivable lanes, -1 indicates error e.g. no roadnetwork loaded
 	*/
 	RM_DLL_API int RM_GetRoadNumberOfLanes(int roadId, float s);
 
@@ -228,7 +252,7 @@ extern "C"
 	@param roadId The road ID
 	@param laneIndex The index of the lane
 	@param s The distance along the road at what point to look up the lane ID
-	@return The lane ID
+	@return The lane ID, -1 indicates error e.g. no roadnetwork loaded
 	*/
 	RM_DLL_API int RM_GetLaneIdByIndex(int roadId, int laneIndex, float s);
 
@@ -291,7 +315,7 @@ extern "C"
 	@param handle Handle to the position object
 	@param dist Distance (meter) to move
 	@param junctionSelectorAngle Desired direction [0:2pi] from incoming road direction (angle = 0), set -1 to randomize
-	@return 0 if successful, -1 if not
+	@return 0 if successful, for other codes see esmini roadmanager::Position::enum class ErrorCode
 	*/
 	RM_DLL_API int RM_PositionMoveForward(int handle, float dist, float junctionSelectorAngle);
 
@@ -328,7 +352,7 @@ extern "C"
 	@param data Struct including all result values, see RM_RoadProbeInfo typedef
 	@param lookAheadMode Measurement strategy: Along reference lane, lane center or current lane offset. See roadmanager::Position::LookAheadMode enum
 	@param inRoadDrivingDirection If true always look along primary driving direction. If false, look in most straightforward direction according to object heading.
-	@return 0 if successful, -2 if probe reached end of road, -1 if some error
+	@return 0 if successful, 1 if probe reached end of road, 2 if end ouf route, -1 if some error
 	*/
 	RM_DLL_API int RM_GetProbeInfo(int handle, float lookahead_distance, RM_RoadProbeInfo *data, int lookAheadMode, bool inRoadDrivingDirection);
 
@@ -344,7 +368,7 @@ extern "C"
 	/**
 	Get the number of road signs along specified road
 	@param road_id The road along which to look for signs
-	@return Number of road signs
+	@return Number of road signs, -1 on error
 	*/
 	RM_DLL_API int RM_GetNumberOfRoadSigns(int road_id);
 
@@ -361,7 +385,7 @@ extern "C"
 		Get the number of lane validity records of specified road object/sign
 		@param road_id The road of which to look for the sign
 		@param index Index of the sign. Note: not ID
-		@return Number of validity records of specified road sign
+		@return Number of validity records of specified road sign, -1 if not
 	*/
 	RM_DLL_API int RM_GetNumberOfRoadSignValidityRecords(int road_id, int index);
 
@@ -374,6 +398,11 @@ extern "C"
 		@return 0 if successful, -1 if not
 	*/
 	RM_DLL_API int RM_GetRoadSignValidityRecord(int road_id, int signIndex, int validityIndex, RM_RoadObjValidity* validity);
+
+	/**
+		Get the xodr road file georeference 
+	*/
+    RM_DLL_API int RM_GetOpenDriveGeoReference(RM_GeoReference* rmGeoReference);
 
 #ifdef __cplusplus
 }
